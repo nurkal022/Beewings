@@ -51,3 +51,35 @@ def test_process_scan_dry_run_without_debug_creates_nothing(synthetic_scan, tmp_
                  rotate=False, debug=False, dry_run=True)
 
     assert not out_dir.exists()  # truly read-only: no dir, no files
+
+
+def test_label_frac_masks_left_fraction(synthetic_scan, tmp_path):
+    from beewings.segment.cli import _resolve_label
+    from beewings.segment.slide import estimate_background
+    img, meta = synthetic_scan
+    bg = estimate_background(img)
+    box = _resolve_label(img, bg, label_box=None, label_frac=0.25)
+    h, w = meta["shape"]
+    assert box == (0, 0, int(round(0.25 * w)), h)
+
+
+def test_label_box_overrides_autodetect_and_clamps(synthetic_scan, tmp_path):
+    from beewings.segment.cli import _resolve_label
+    from beewings.segment.slide import estimate_background
+    img, meta = synthetic_scan
+    h, w = meta["shape"]
+    bg = estimate_background(img)
+    # Box partly outside the image must be clamped to bounds.
+    box = _resolve_label(img, bg, label_box=(w - 50, 10, 999, 999), label_frac=None)
+    assert box == (w - 50, 10, 50, h - 10)
+
+
+def test_parse_label_box_valid_and_invalid():
+    from beewings.segment.cli import _parse_label_box
+    import argparse
+    import pytest as _pytest
+    assert _parse_label_box("10, 20, 30, 40") == (10, 20, 30, 40)
+    with _pytest.raises(argparse.ArgumentTypeError):
+        _parse_label_box("1,2,3")
+    with _pytest.raises(argparse.ArgumentTypeError):
+        _parse_label_box("1,2,3,0")

@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 
@@ -20,7 +20,50 @@ from .layout import reading_order
 from .slide import detect_label_region, estimate_background
 from .wings import find_wings, wing_mask
 
+Box = Tuple[int, int, int, int]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+
+
+def _parse_label_box(text: str) -> Box:
+    """Parse a "x,y,w,h" string into an int Box (argparse type)."""
+    parts = text.replace(" ", "").split(",")
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError("expected four comma-separated ints: X,Y,W,H")
+    try:
+        x, y, w, h = (int(v) for v in parts)
+    except ValueError:
+        raise argparse.ArgumentTypeError("X,Y,W,H must be integers")
+    if w <= 0 or h <= 0:
+        raise argparse.ArgumentTypeError("W and H must be positive")
+    return (x, y, w, h)
+
+
+def _clamp_box(box: Box, w: int, h: int) -> Optional[Box]:
+    """Clamp a box to image bounds; return None if it has no area."""
+    x, y, bw, bh = box
+    x0 = max(0, min(x, w))
+    y0 = max(0, min(y, h))
+    x1 = max(0, min(x + bw, w))
+    y1 = max(0, min(y + bh, h))
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return (x0, y0, x1 - x0, y1 - y0)
+
+
+def _resolve_label(
+    img: "cv2.typing.MatLike",
+    bg: float,
+    label_box: Optional[Box],
+    label_frac: Optional[float],
+) -> Optional[Box]:
+    """Pick the label region. A manual `label_box` (pixels) wins; else
+    `label_frac` masks the left fraction of the width; else auto-detect."""
+    h, w = img.shape[:2]
+    if label_box is not None:
+        return _clamp_box(label_box, w, h)
+    if label_frac is not None:
+        return _clamp_box((0, 0, int(round(label_frac * w)), h), w, h)
+    return detect_label_region(img, bg)
 
 
 def process_scan(
@@ -31,9 +74,15 @@ def process_scan(
     rotate: bool = False,
     debug: bool = False,
     dry_run: bool = False,
+    label_box: Optional[Box] = None,
+    label_frac: Optional[float] = None,
 ) -> int:
     """Crop one scan. Returns the number of wings found. Writes outputs to
     `out_dir` named `<stem>_crop_N.jpg`, `<stem>_label.jpg`, `<stem>_debug.jpg`.
+
+    The label region is auto-detected unless `label_box` (pixels: x,y,w,h) or
+    `label_frac` (mask the left fraction of the width) is given — useful for
+    diagonal layouts where auto-detection cannot find the separating gap.
     """
     img = cv2.imread(str(scan_path))
     if img is None:
@@ -41,7 +90,7 @@ def process_scan(
 
     stem = scan_path.stem
     bg = estimate_background(img)
-    label = detect_label_region(img, bg)
+    label = _resolve_label(img, bg, label_box, label_frac)
     mask = wing_mask(img, bg, exclude=label)
     boxes = find_wings(mask, min_area_frac=min_area_frac)
     order = reading_order(boxes)
@@ -94,10 +143,18 @@ def main() -> int:
                    help="rotate wings to horizontal, base on the left (for ML)")
     p.add_argument("--debug", action="store_true", help="save <stem>_debug.jpg overlay")
     p.add_argument("--dry-run", action="store_true", help="only write debug overlay")
+    p.add_argument("--label-box", type=_parse_label_box, default=None,
+                   metavar="X,Y,W,H",
+                   help="manual label rectangle in pixels (overrides auto-detect)")
+    p.add_argument("--label-frac", type=float, default=None, metavar="F",
+                   help="mask the left fraction F of the width as label "
+                        "(overrides auto-detect; for diagonal layouts)")
     args = p.parse_args()
 
     if not args.inplace and args.out is None:
         p.error("either --out or --inplace is required")
+    if args.label_box is not None and args.label_frac is not None:
+        p.error("use either --label-box or --label-frac, not both")
 
     # Skip files we generate ourselves so re-runs are idempotent.
     skip = ("_crop_", "_label", "_debug")
@@ -115,6 +172,7 @@ def main() -> int:
                 scan, out_dir,
                 margin=args.margin, min_area_frac=args.min_area_frac,
                 rotate=args.rotate_canonical, debug=args.debug, dry_run=args.dry_run,
+                label_box=args.label_box, label_frac=args.label_frac,
             )
             print(f"{scan}: {n} wings")
             total += n
