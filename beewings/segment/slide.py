@@ -38,13 +38,17 @@ def detect_label_region(
     img: np.ndarray,
     bg: float,
     search_frac: float = 0.45,
-    gap_frac: float = 0.04,
+    gap_frac: float = 0.006,
 ) -> Optional[Box]:
     """Return (x, y, w, h) of the left label block, or None if absent.
 
-    Looks for dark content in the left `search_frac` of the image, then finds
-    the first sustained empty vertical gap (width >= gap_frac * W) that ends the
-    label block. The bounding box of content left of that gap is the label.
+    The handwritten label sits on the far left, separated from the wing grid by
+    an empty vertical band. We scan columns of the left `search_frac`, skip the
+    faint outer margin to find where substantial content starts, then look for
+    the first empty band at least `gap_frac * W` wide that separates the label
+    from the wings. The bounding box of all content left of that band is the
+    label. `gap_frac` is small because on high-resolution scans the separating
+    band is only a few percent of the width, while character gaps are smaller.
     """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
@@ -56,30 +60,35 @@ def detect_label_region(
         return None  # no content on the left at all
 
     gap_w = max(5, int(w * gap_frac))
+    # A column is "empty" when it holds only negligible foreground. The threshold
+    # is relative to the busiest column so faint speckle counts as empty.
     empty = col <= (0.01 * col.max())
 
-    # Find the rightmost column of the *first* label cluster: scan from the
-    # leftmost content column until a run of `gap_w` empty columns appears.
-    first = int(np.argmax(col > 0))
-    # A real label is always anchored to the far-left edge; if the first
-    # foreground pixel is beyond 15 % of the width it belongs to the wing grid.
+    # Where does substantial label content begin? Skip the faint outer margin.
+    substantial = np.where(~empty[:search_w])[0]
+    if substantial.size == 0:
+        return None
+    first = int(substantial[0])
+    # A real label is always anchored to the far-left edge; if substantial
+    # content starts beyond 15 % of the width it belongs to the wing grid.
     if first > int(w * 0.15):
         return None
-    end = first
+
+    # Scan rightward from the label start for the first separating empty band.
     run = 0
+    gap_start = None
     for x in range(first, search_w):
         if empty[x]:
             run += 1
             if run >= gap_w:
-                end = x - gap_w
+                gap_start = x - run + 1
                 break
         else:
             run = 0
-            end = x
-    else:
+    if gap_start is None:
         return None  # content never closed with a gap -> not a label block
 
-    band = fg[:, : end + 1]
+    band = fg[:, :gap_start]
     ys, xs = np.where(band > 0)
     if xs.size == 0:
         return None

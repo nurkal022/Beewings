@@ -12,8 +12,8 @@ Box = Tuple[int, int, int, int]
 def wing_mask(
     img: np.ndarray,
     bg: float,
-    delta: int = 25,
-    close_frac: float = 0.012,
+    delta: int = 45,
+    close_frac: float = 0.001,
     exclude: Optional[Box] = None,
 ) -> np.ndarray:
     """Binary (0/255) mask of wings: content darker than background, with veins
@@ -21,6 +21,11 @@ def wing_mask(
 
     `exclude` (the label box) is painted out before masking so it cannot be
     picked up as a wing.
+
+    `delta` is deliberately high: it captures the dark wing body and veins while
+    rejecting the faint membrane/shadow bridges between densely packed wings, so
+    neighbouring wings stay separate. `close_frac` keeps the closing kernel small
+    (a few pixels) so it merges veins within one wing without merging neighbours.
     """
     work = img.copy()
     if exclude is not None:
