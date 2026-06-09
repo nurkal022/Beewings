@@ -1,0 +1,251 @@
+# BeeWings
+
+Полный программный стек для морфометрии крыльев медоносной пчелы: ручная разметка, две независимые нейросетевые модели (Алпатов 12, Тофильский 19), автоматический расчёт классических индексов (CI, DsA, RI), пакетная обработка.
+
+См. также: [METHODOLOGY.md](METHODOLOGY.md) — подробная научная методология.
+
+---
+
+## Установка
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+## Быстрый старт (демо)
+
+```bash
+beewings
+```
+
+В окне: **Файл → Открыть папку** → выбрать [demo_wings/](demo_wings/) (8 крыльев без разметки).
+Профиль в правой панели → **🧠 ML авто-определить точки** → точки расставлены за ~0.5 с.
+
+---
+
+## Две независимые методики
+
+| Профиль | Точки | Методика | Checkpoint | Используется для |
+|---|---|---|---|---|
+| **Алпатов 8 точек** | 8 | Линейная (Россия, 1948) | `alpatov12.pt` | Кубитальный индекс CI |
+| **Алпатов 12 точек** | 12 | Линейная | `alpatov12.pt` | CI, DsA, RI, PI индексы |
+| **Тофильский 19 точек** | 19 | Геометрическая (Польша, 2008+) | `tofilski19.pt` | Procrustes / IdentiFly / DeepWings совместимая разметка |
+
+Методики **строго разделены**: разные модели, разные ID точек, разные формулы индексов. Загрузка чужого checkpoint'а под профиль блокируется с ошибкой `Несовпадение схемы`.
+
+---
+
+## Точность моделей
+
+| | Tofilski 19pt | Alpatov 12pt |
+|---|---|---|
+| **val median** | **1.55 px** | **1.53 px** |
+| **val mean** | 1.81 px | 1.67 px |
+| **val p90** | 2.61 px | 2.57 px |
+| Размер train | 6283 крыла | 5904 крыла |
+
+---
+
+## CLI
+
+| Команда | Назначение |
+|---|---|
+| `beewings` | GUI разметка + ML авто-определение |
+| `beewings-ml-prepare` | TPS-дерево → единый CSV для тренировки |
+| `beewings-ml-train` | Тренировка UNet на CSV |
+| `beewings-ml-eval` | Per-landmark + overall pixel error |
+| `beewings-ml-predict` | Предсказание на одном изображении (JSON в stdout) |
+| `beewings-ml-batch` | Пакетная обработка папки → JSON-аннотации + CSV + индексы |
+| `beewings-ml-report` | Paper-ready графики (per-landmark error, hist, sample overlays) |
+| `beewings-detect` | Классический CV-детектор (резерв без обучения) |
+| `beewings-eval` | Eval классического детектора |
+| `beewings-canonicalize` | Каноникализация порядка точек в CSV |
+
+### Пакетный пример
+
+```bash
+# обработать все .jpg в demo_wings/, сохранить CSV+индексы+JSON
+beewings-ml-batch \
+    --checkpoint checkpoints/alpatov12.pt \
+    --images demo_wings \
+    --csv predictions.csv \
+    --report report.json \
+    --tta \
+    --include-confidence
+```
+
+В `report.json` для каждого изображения окажется блок с уверенностью точек и значениями индексов (CI Алпатова, DsA, RI, ...).
+
+### Paper-ready отчёт
+
+```bash
+beewings-ml-report \
+    --csv data/wings12.csv \
+    --checkpoint checkpoints/alpatov12.pt \
+    --image-root data/wings12_images \
+    --out reports/alpatov12_test \
+    --split test --tta
+```
+
+Результат в `reports/alpatov12_test/`:
+- `summary.json` — машинно-читаемый JSON для статьи
+- `eval_table.csv` — таблица per-landmark
+- `per_landmark.png` — bar chart mean/median/p90 ошибок по точкам
+- `error_hist.png` — гистограмма распределения ошибок
+- `sample_overlays/` — 12 примеров с GT (зелёный) vs prediction (красный)
+
+---
+
+## Тренировка с нуля
+
+```bash
+# 1. Собрать единый CSV (Y-координаты автоматически инвертируются под image origin)
+beewings-ml-prepare \
+    --root realData \
+    --out data/wings19.csv \
+    --n-points 19 \
+    --relative-to realData
+
+# 2. Тренировка (CUDA, ~2.5 часа на RTX 5080 для 100 эпох)
+beewings-ml-train \
+    --csv data/wings19.csv \
+    --image-root realData \
+    --out runs/unet19_v1 \
+    --epochs 100 \
+    --batch 24 \
+    --base-channels 48 \
+    --lr 1.5e-3
+
+# 3. Eval на validation
+beewings-ml-eval \
+    --csv data/wings19.csv \
+    --checkpoint runs/unet19_v1/best.pt \
+    --image-root realData
+```
+
+---
+
+## GUI хоткеи
+
+| Клавиша | Действие |
+|---|---|
+| Левый клик | Поставить текущую точку |
+| Перетаскивание | Сдвинуть точку |
+| Правый клик на точке | Контекстное меню (удалить, неуверенно, пропустить) |
+| `1`–`9`, `0` | Выбрать точку № N (`Shift+` для 10–19) |
+| `←` / `→` | Предыдущая / следующая точка |
+| `↑` / `↓` | Предыдущее / следующее изображение |
+| `Backspace` / `Del` | Удалить текущую точку |
+| `U` | Пометить точку как uncertain |
+| `S` | Пропустить точку (skipped) |
+| `Alt + ←/→/↑/↓` | Сдвиг текущей точки на 1 пиксель |
+| `Alt + Shift + arrow` | Sub-pixel сдвиг (0.1 px) |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo |
+| Средняя кнопка мыши drag | Pan канваса (перчатка) |
+| `Space` + ЛКМ | Pan (альтернатива) |
+| Колесо | Прокрутка / Pan |
+| `Ctrl`/`Cmd` + колесо | Zoom к курсору |
+| `Cmd 0` / `Cmd 1` / `Z` | Fit / 100% / Zoom к текущей |
+| `F` | Mirror flip |
+| `R` | Reset view |
+| `T` | Overlay предыдущего крыла |
+| `Ctrl+\` / `Ctrl+]` / `F11` | Скрыть левую / правую / обе панели |
+
+После **🧠 ML авто-определить**:
+- Точки с уверенностью < 0.45 автоматически помечаются как `uncertain` (для ручной проверки)
+- В статус-баре: `ML: 19/19 точек, средняя уверенность 0.78 — проверь точки [7, 14]`
+- Низкоуверенные точки попадают в список для review
+
+---
+
+## Структура проекта
+
+```
+beewings/
+├── annotator/            # PyQt6 GUI
+│   ├── main_window.py    # Главное окно, ML/CV кнопки, индексы
+│   ├── canvas.py         # Zoom/pan/crosshair/magnifier
+│   ├── side_panel.py     # Профили, точки, метрики
+│   ├── image_list.py     # Список крыльев
+│   ├── magnifier.py      # Лупа под курсором
+│   └── enhancements.py   # CLAHE/контраст/инверсия отображения
+├── core/                 # Схемы данных, профили, экспорт, индексы
+│   ├── profiles.py       # Алпатов 8/12, Тофильский 19
+│   ├── indices.py        # CI, DsA, RI и др.
+│   ├── metrics.py        # Live метрики для GUI
+│   ├── text_overlay.py   # PIL с Unicode для cv2-оверлеев
+│   ├── schema.py         # Pydantic Landmark/WingAnnotation
+│   ├── io_csv.py / io_tps.py / io_coco.py  # Экспорт
+├── detector/             # Классический CV-детектор (резерв)
+│   ├── pipeline.py
+│   ├── preprocess.py
+│   ├── skeleton.py
+│   ├── shape_model.py
+│   ├── matching.py
+│   ├── canonicalize.py
+│   └── evaluate.py
+└── ml/                   # PyTorch ML pipeline
+    ├── prepare.py        # TPS → unified CSV
+    ├── dataset.py        # Dataset + albumentations
+    ├── model.py          # UNet
+    ├── heatmap.py        # Gaussian encoding + sub-pixel decoding
+    ├── train.py          # Training loop с AMP + cosine LR
+    ├── inference.py      # checkpoint → predictions (+ TTA + confidence)
+    ├── batch.py          # Pakage CLI
+    ├── evaluate.py       # Stats vs CSV ground truth
+    └── report.py         # Paper-ready figures
+```
+
+## Структура данных
+
+```
+data/
+├── wings19.csv               # 7391 крыло (Тофильский)
+├── wings12.csv               # 6935 крыльев (Алпатов)
+└── wings19_images/           # Унифицированный пул изображений
+                              # (обе схемы расшарят файлы)
+
+runs/                         # Чекпоинты + train.log + config.json
+├── unet19_v1/best.pt
+└── alpatov12_v1/best.pt
+
+checkpoints/                  # Production-ready
+├── tofilski19.pt             # → runs/unet19_v1/best.pt
+└── alpatov12.pt              # → runs/alpatov12_v1/best.pt
+
+reports/                      # beewings-ml-report выходы
+├── tofilski19_test/
+│   ├── summary.json
+│   ├── eval_table.csv
+│   ├── per_landmark.png
+│   ├── error_hist.png
+│   └── sample_overlays/
+└── alpatov12_test/
+```
+
+## Формат checkpoint
+
+```python
+{
+    "model": state_dict,        # веса UNet
+    "config": {                 # параметры тренировки
+        "n_points": 12 | 19,
+        "input_h": 256, "input_w": 512,
+        "heatmap_h": 64, "heatmap_w": 128,
+        "base_channels": 48,
+        ...
+    },
+    "epoch": 100,
+    "val": { "mean": ..., "median": ..., "p90": ... },
+}
+```
+
+Проверка совместимости перед загрузкой:
+```python
+ckpt = torch.load("checkpoints/alpatov12.pt", weights_only=False)
+assert ckpt["config"]["n_points"] == 12  # Alpatov
+```
+
+GUI делает эту проверку автоматически и блокирует cross-profile загрузку.

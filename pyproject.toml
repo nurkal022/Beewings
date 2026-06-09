@@ -1,0 +1,40 @@
+[project]
+name = "beewings"
+version = "0.1.0"
+description = "Bee wing morphometry annotation tool"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.6",
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "Pillow>=10.0",
+    "pydantic>=2.5",
+    "scikit-image>=0.22",
+    "scipy>=1.11",
+    "torch>=2.1",
+    "torchvision>=0.16",
+    "albumentations>=1.4",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",
+    "matplotlib>=3.8",
+]
+
+[project.scripts]
+beewings = "beewings.annotator.__main__:main"
+beewings-detect = "beewings.detector.cli:main"
+beewings-eval = "beewings.detector.evaluate:main"
+beewings-canonicalize = "beewings.detector.canonicalize:main"
+beewings-ml-prepare = "beewings.ml.cli:prepare_cmd"
+beewings-ml-train = "beewings.ml.cli:train_cmd"
+beewings-ml-eval = "beewings.ml.cli:eval_cmd"
+beewings-ml-predict = "beewings.ml.cli:predict_cmd"
+beewings-ml-batch = "beewings.ml.batch:main"
+beewings-ml-report = "beewings.ml.report:main"
+beewings-classify = "beewings.ml.classify:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["beewings*"]

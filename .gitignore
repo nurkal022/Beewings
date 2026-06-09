@@ -1,0 +1,32 @@
+# Virtualenv / build
+.venv/
+*.egg-info/
+__pycache__/
+*.pyc
+build/
+dist/
+
+# Large data / binaries (kept out of version control)
+скан/
+data/
+realData/
+outData/
+demo_wings/
+debug_out/
+runs/
+checkpoints/
+models_release/
+annotations/
+reports/
+wings*/
+*.tar.gz
+*.pt
+*.csv
+*.tps
+
+# Scratch images at repo root
+image.png
+image copy.png
+
+# OS
+.DS_Store
