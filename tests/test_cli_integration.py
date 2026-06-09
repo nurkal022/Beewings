@@ -39,3 +39,15 @@ def test_process_scan_dry_run_writes_only_debug(synthetic_scan, tmp_path):
 
     assert list(out_dir.glob("0042_crop_*.jpg")) == []
     assert (out_dir / "0042_debug.jpg").exists()
+
+
+def test_process_scan_dry_run_without_debug_creates_nothing(synthetic_scan, tmp_path):
+    img, _ = synthetic_scan
+    scan_path = tmp_path / "0042.jpg"
+    cv2.imwrite(str(scan_path), img)
+    out_dir = tmp_path / "out"
+
+    process_scan(scan_path, out_dir, margin=0.10, min_area_frac=0.0005,
+                 rotate=False, debug=False, dry_run=True)
+
+    assert not out_dir.exists()  # truly read-only: no dir, no files

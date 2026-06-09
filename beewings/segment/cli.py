@@ -46,7 +46,8 @@ def process_scan(
     boxes = find_wings(mask, min_area_frac=min_area_frac)
     order = reading_order(boxes)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run or debug:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     if not dry_run:
         for n, idx in enumerate(order):
@@ -72,7 +73,8 @@ def _iter_scans(root: Path, recursive: bool) -> List[Path]:
 def _out_dir_for(scan: Path, input_root: Path, out: Optional[Path], inplace: bool) -> Path:
     if inplace:
         return scan.parent
-    assert out is not None
+    if out is None:
+        raise ValueError("out directory is required when not inplace")
     if input_root.is_file():
         return out
     # Mirror the sub-folder structure under `out`.
