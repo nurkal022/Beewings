@@ -26,3 +26,17 @@ def test_crop_wing_rotate_makes_landscape():
     box = (90, 40, 20, 120)
     out = crop_wing(img, box, margin=0.1, rotate=True, bg=255.0)
     assert out.shape[1] >= out.shape[0]  # width >= height
+
+
+from beewings.segment.debug import render_overlay
+
+
+def test_render_overlay_returns_same_shape_without_mutating():
+    img = np.full((120, 240, 3), 255, np.uint8)
+    boxes = [(20, 20, 40, 30), (120, 60, 40, 30)]
+    order = [0, 1]
+    before = img.copy()
+    out = render_overlay(img, boxes, order, label_box=(0, 0, 15, 100))
+    assert out.shape == img.shape
+    assert np.array_equal(img, before)  # input not mutated
+    assert not np.array_equal(out, before)  # something was drawn
