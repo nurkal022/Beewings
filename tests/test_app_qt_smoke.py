@@ -24,3 +24,14 @@ def test_mainwindow_wrapper_still_works(qapp, tmp_path):
     w = MainWindow()
     w.load_folder(_crops(tmp_path))
     assert w is not None
+
+
+def test_home_lists_recents(qapp):
+    from beewings.app.home import HomeScreen
+    recents = [{"path": "/a/Клат", "name": "Клат", "opened_at": "t",
+                "n_splits": 3, "n_cropped": 2, "n_landmarked": 1}]
+    opened = []
+    h = HomeScreen(recents, on_open=lambda p: opened.append(p))
+    assert h.cards_count() == 1
+    h._emit_open("/a/Клат")
+    assert opened == ["/a/Клат"]
