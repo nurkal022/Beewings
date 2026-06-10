@@ -10,6 +10,7 @@ from typing import List, Optional
 
 import cv2
 import numpy as np
+from PyQt6 import sip
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
@@ -329,6 +330,8 @@ class AnnotatorWidget(QWidget):
         self.status.emit(f"Открыта папка: {folder}")
 
     def _on_image_selected(self, path: Path) -> None:
+        if sip.isdeleted(self):
+            return
         self._save_current()
         self._load_image(path)
 
@@ -382,6 +385,8 @@ class AnnotatorWidget(QWidget):
         self.status.emit(f"{path.name}  ({w}×{h} пикс.)")
 
     def _save_current(self) -> None:
+        if sip.isdeleted(self):
+            return
         if self._current_ann is None or self._current_image_path is None or self._project_dir is None:
             return
         self._current_ann.flipped = self.side.flip.isChecked()
@@ -616,7 +621,7 @@ class AnnotatorWidget(QWidget):
     # ---- common change handler ---------------------------------------------
 
     def _after_change(self, advance: bool, rebuild: bool = True, push_undo: bool = True) -> None:
-        if self._current_ann is None:
+        if sip.isdeleted(self) or self._current_ann is None:
             return
         if rebuild:
             self.canvas.refresh_landmarks()
@@ -732,6 +737,8 @@ class AnnotatorWidget(QWidget):
 
     def _run_ml_detect(self) -> None:
         """Run trained UNet ML detector on the current image."""
+        if sip.isdeleted(self):
+            return
         if self._current_ann is None or self._current_image_path is None or self._project_dir is None:
             return
         # Each profile uses its OWN checkpoint — Alpatov and Tofilski are
@@ -848,6 +855,8 @@ class AnnotatorWidget(QWidget):
         training one from <project_dir>/landmarks.csv (the workflow if the
         user annotated some specimens first and exported a CSV).
         """
+        if sip.isdeleted(self):
+            return
         if self._current_ann is None or self._current_image_path is None or self._project_dir is None:
             return
         from ..detector.pipeline import Detector

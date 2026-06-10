@@ -5,6 +5,7 @@ from typing import Callable, Optional
 
 from typing import Dict
 
+from PyQt6 import sip
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (
@@ -242,6 +243,8 @@ class SidePanel(QWidget):
         self.profile_combo.blockSignals(False)
 
     def set_profile(self, profile: Profile, ann: WingAnnotation, current_id: int) -> None:
+        if sip.isdeleted(self):
+            return
         self._profile = profile
         self._current_id = current_id
         # avoid feedback loop
@@ -255,6 +258,8 @@ class SidePanel(QWidget):
         self._update_metrics(ann)
 
     def refresh(self, ann: WingAnnotation) -> None:
+        if sip.isdeleted(self):
+            return
         self._rebuild_list(ann)
         self._update_progress(ann)
         self._update_metrics(ann)
