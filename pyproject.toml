@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.scripts]
-beewings = "beewings.annotator.__main__:main"
+beewings = "beewings.app.app:main"
 beewings-detect = "beewings.detector.cli:main"
 beewings-eval = "beewings.detector.evaluate:main"
 beewings-canonicalize = "beewings.detector.canonicalize:main"
@@ -32,7 +32,7 @@ beewings-ml-batch = "beewings.ml.batch:main"
 beewings-ml-report = "beewings.ml.report:main"
 beewings-classify = "beewings.ml.classify:main"
 beewings-crop = "beewings.segment.cli:main"
-beewings-pipeline = "beewings.pipeline.wizard:main"
+beewings-pipeline = "beewings.app.app:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
