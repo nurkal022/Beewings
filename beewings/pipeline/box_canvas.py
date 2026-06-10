@@ -21,16 +21,11 @@ _CURSORS = {
 
 
 class BoxEditorCanvas(QWidget):
-    """Scan with editable wing boxes (green) + one label box (red).
-
-    LMB drag on empty space draws a new wing box; drag a handle resizes; drag a
-    body moves; click selects; RMB or Del deletes the selected/hit box; arrow
-    keys nudge the selection (Shift = x10). begin_label_draw() makes the next
-    drag create the red label box. Ctrl+wheel zooms.
-    """
+    """Scan with editable wing boxes (green) + one editable label box (red)."""
 
     boxesChanged = pyqtSignal()
-    selectionChanged = pyqtSignal(int)  # wing index, or -1
+    selectionChanged = pyqtSignal(int)   # wing index, or -1
+    labelSelected = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,7 +37,8 @@ class BoxEditorCanvas(QWidget):
         self._scale = 1.0
         self._offset = QPointF(0, 0)
         self._selected = -1
-        self._drag = None
+        self._label_sel = False
+        self._drag = None             # (kind, idx, handle); kind 'wing'|'label'
         self._drag_last: Optional[QPoint] = None
         self._drag_start = None
         self._new_origin = None
@@ -50,6 +46,7 @@ class BoxEditorCanvas(QWidget):
         self._label_mode = False
         self._drawing_label = False
 
+    # ---- public API -----------------------------------------------------
     def set_scan(self, img_bgr: np.ndarray, wing_boxes: List[Box],
                  label_box: Optional[Box]) -> None:
         rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
@@ -59,6 +56,7 @@ class BoxEditorCanvas(QWidget):
         self._wing = [normalize_box(b) for b in wing_boxes]
         self._label = normalize_box(label_box) if label_box else None
         self._set_selected(-1)
+        self._set_label_sel(False)
         self._fit()
         self.update()
 
@@ -71,9 +69,19 @@ class BoxEditorCanvas(QWidget):
     def selected(self) -> int:
         return self._selected
 
+    def label_selected(self) -> bool:
+        return self._label_sel
+
     def select_box(self, idx: int) -> None:
+        self._set_label_sel(False)
         self._set_selected(idx if 0 <= idx < len(self._wing) else -1)
         self.update()
+
+    def select_label(self) -> None:
+        if self._label is not None:
+            self._set_selected(-1)
+            self._set_label_sel(True)
+            self.update()
 
     def delete_box(self, idx: int) -> None:
         if 0 <= idx < len(self._wing):
@@ -100,14 +108,22 @@ class BoxEditorCanvas(QWidget):
 
     def clear_label(self) -> None:
         self._label = None
+        self._set_label_sel(False)
         self.boxesChanged.emit()
         self.update()
 
+    # ---- selection helpers ---------------------------------------------
     def _set_selected(self, idx: int) -> None:
         if idx != self._selected:
             self._selected = idx
             self.selectionChanged.emit(idx)
 
+    def _set_label_sel(self, on: bool) -> None:
+        if on != self._label_sel:
+            self._label_sel = on
+            self.labelSelected.emit(on)
+
+    # ---- view -----------------------------------------------------------
     def _fit(self) -> None:
         if not self._pix:
             return
@@ -125,6 +141,7 @@ class BoxEditorCanvas(QWidget):
     def _hpix(self) -> int:
         return int(8 / self._scale) + 1
 
+    # ---- painting -------------------------------------------------------
     def paintEvent(self, _ev) -> None:
         p = QPainter(self)
         p.fillRect(self.rect(), Qt.GlobalColor.darkGray)
@@ -153,9 +170,12 @@ class BoxEditorCanvas(QWidget):
             pen.setStyle(Qt.PenStyle.SolidLine)
 
         if self._label:
-            pen.setColor(Qt.GlobalColor.red); pen.setWidth(2); p.setPen(pen)
+            pen.setColor(QColor(255, 140, 0) if self._label_sel else Qt.GlobalColor.red)
+            pen.setWidth(3 if self._label_sel else 2); p.setPen(pen)
             x, y, w, h = self._label
             p.drawRect(x, y, w, h)
+            if self._label_sel:
+                self._draw_handles(p, self._label)
 
     def _draw_handles(self, p: QPainter, box: Box) -> None:
         x, y, w, h = box
@@ -172,6 +192,7 @@ class BoxEditorCanvas(QWidget):
     def resizeEvent(self, _ev) -> None:
         self._fit()
 
+    # ---- mouse ----------------------------------------------------------
     def mousePressEvent(self, ev) -> None:
         ip = self._to_img(ev.position())
         if ev.button() == Qt.MouseButton.RightButton:
@@ -187,20 +208,31 @@ class BoxEditorCanvas(QWidget):
             return
         idx, handle = hit_test(self._wing, ip.x(), ip.y(), self._hpix())
         if idx is not None:
-            self._drag = (idx, handle)
+            self.select_box(idx)
+            self._drag = ("wing", idx, handle)
             self._drag_last = ip
             self._drag_start = self._wing[idx]
-            self.select_box(idx)
-        else:
-            self._new_origin = ip
-            self.select_box(-1)
+            return
+        if self._label is not None:
+            lidx, lhandle = hit_test([self._label], ip.x(), ip.y(), self._hpix())
+            if lidx is not None:
+                self.select_label()
+                self._drag = ("label", 0, lhandle)
+                self._drag_last = ip
+                self._drag_start = self._label
+                return
+        self._new_origin = ip
+        self.select_box(-1)
 
     def mouseMoveEvent(self, ev) -> None:
         ip = self._to_img(ev.position())
         if self._drag is not None and self._drag_last is not None:
-            idx, handle = self._drag
+            kind, idx, handle = self._drag
             dx, dy = ip.x() - self._drag_last.x(), ip.y() - self._drag_last.y()
-            self._wing[idx] = resize_box(self._wing[idx], handle, dx, dy)
+            if kind == "wing":
+                self._wing[idx] = resize_box(self._wing[idx], handle, dx, dy)
+            else:
+                self._label = resize_box(self._label, handle, dx, dy)
             self._drag_last = ip
             self.update()
         elif self._new_origin is not None:
@@ -209,6 +241,8 @@ class BoxEditorCanvas(QWidget):
             self.update()
         else:
             _, handle = hit_test(self._wing, ip.x(), ip.y(), self._hpix())
+            if handle is None and self._label is not None:
+                _, handle = hit_test([self._label], ip.x(), ip.y(), self._hpix())
             self.setCursor(_CURSORS.get(handle, Qt.CursorShape.ArrowCursor))
 
     def mouseReleaseEvent(self, ev) -> None:
@@ -231,9 +265,13 @@ class BoxEditorCanvas(QWidget):
             self._preview = None
             self.update()
         elif self._drag is not None:
-            idx, _ = self._drag
-            self._wing[idx] = normalize_box(self._wing[idx])
-            changed = self._wing[idx] != self._drag_start
+            kind, idx, _ = self._drag
+            if kind == "wing":
+                self._wing[idx] = normalize_box(self._wing[idx])
+                changed = self._wing[idx] != self._drag_start
+            else:
+                self._label = normalize_box(self._label)
+                changed = self._label != self._drag_start
             self._drag = None
             self._drag_last = None
             self._drag_start = None
@@ -247,22 +285,25 @@ class BoxEditorCanvas(QWidget):
             self.update()
 
     def keyPressEvent(self, ev) -> None:
-        if not (0 <= self._selected < len(self._wing)):
-            super().keyPressEvent(ev)
-            return
         key = ev.key()
-        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            self.delete_box(self._selected)
-            return
         step = 10 if ev.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
-        dx = dy = 0
-        if key == Qt.Key.Key_Left: dx = -step
-        elif key == Qt.Key.Key_Right: dx = step
-        elif key == Qt.Key.Key_Up: dy = -step
-        elif key == Qt.Key.Key_Down: dy = step
-        else:
-            super().keyPressEvent(ev); return
-        x, y, w, h = self._wing[self._selected]
-        self._wing[self._selected] = (x + dx, y + dy, w, h)
-        self.boxesChanged.emit()
-        self.update()
+        delete_keys = (Qt.Key.Key_Delete, Qt.Key.Key_Backspace)
+        arrows = {Qt.Key.Key_Left: (-step, 0), Qt.Key.Key_Right: (step, 0),
+                  Qt.Key.Key_Up: (0, -step), Qt.Key.Key_Down: (0, step)}
+        if self._label_sel and self._label is not None:
+            if key in delete_keys:
+                self.clear_label(); return
+            if key in arrows:
+                dx, dy = arrows[key]
+                x, y, w, h = self._label
+                self._label = (x + dx, y + dy, w, h)
+                self.boxesChanged.emit(); self.update(); return
+        elif 0 <= self._selected < len(self._wing):
+            if key in delete_keys:
+                self.delete_box(self._selected); return
+            if key in arrows:
+                dx, dy = arrows[key]
+                x, y, w, h = self._wing[self._selected]
+                self._wing[self._selected] = (x + dx, y + dy, w, h)
+                self.boxesChanged.emit(); self.update(); return
+        super().keyPressEvent(ev)

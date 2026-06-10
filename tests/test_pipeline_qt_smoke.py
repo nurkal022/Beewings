@@ -50,3 +50,25 @@ def test_box_canvas_selection_and_label(qapp):
     assert c._label_mode is False
     c.clear_label()
     assert c.label_box() is None
+
+
+def test_box_canvas_label_editing(qapp):
+    import numpy as np
+    from beewings.pipeline.box_canvas import BoxEditorCanvas
+    c = BoxEditorCanvas()
+    c.set_scan(np.full((200, 400, 3), 255, np.uint8),
+               wing_boxes=[(10, 10, 50, 40)], label_box=(0, 0, 30, 200))
+    flags = []
+    c.labelSelected.connect(flags.append)
+    c.select_label()
+    assert c.label_selected() is True
+    assert flags[-1] is True
+    assert c.selected() == -1            # wing selection cleared
+    # selecting a wing clears label selection
+    c.select_box(0)
+    assert c.label_selected() is False
+    # clear_label deselects label
+    c.select_label()
+    c.clear_label()
+    assert c.label_box() is None
+    assert c.label_selected() is False
