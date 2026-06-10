@@ -37,3 +37,39 @@ def test_crops_dir(tmp_path):
     root = tmp_path / "proj"
     proj = CropProject.create(root, scans_root="/s", scan_paths=[Path("/s/04401.jpg")])
     assert proj.crops_dir(proj.scans[0]) == root / "crops" / "04401"
+
+
+def test_auto_detect_fills_boxes(scan_file, tmp_path):
+    from beewings.pipeline.project import CropProject, auto_detect
+    scan_path, meta = scan_file
+    proj = CropProject.create(tmp_path / "proj", scans_root=str(scan_path.parent),
+                              scan_paths=[scan_path])
+    auto_detect(proj.scans[0], proj.settings)
+    assert len(proj.scans[0].wing_boxes) == meta["n_wings"]
+    assert proj.scans[0].label_box is not None
+
+
+def test_recrop_writes_crops(scan_file, tmp_path):
+    from beewings.pipeline.project import CropProject, auto_detect, recrop
+    scan_path, meta = scan_file
+    proj = CropProject.create(tmp_path / "proj", scans_root=str(scan_path.parent),
+                              scan_paths=[scan_path])
+    auto_detect(proj.scans[0], proj.settings)
+    n = recrop(proj, proj.scans[0])
+    assert n == meta["n_wings"]
+    crop_dir = proj.crops_dir(proj.scans[0])
+    crops = list(crop_dir.glob(f"{scan_path.stem}_crop_*.jpg"))
+    assert len(crops) == meta["n_wings"]
+    assert (crop_dir / f"{scan_path.stem}_label.jpg").exists()
+    assert proj.scans[0].cropped is True
+
+
+def test_recrop_respects_manual_boxes(scan_file, tmp_path):
+    from beewings.pipeline.project import CropProject, recrop
+    scan_path, _ = scan_file
+    proj = CropProject.create(tmp_path / "proj", scans_root=str(scan_path.parent),
+                              scan_paths=[scan_path])
+    proj.scans[0].wing_boxes = [(360, 90, 110, 56), (520, 90, 110, 56)]
+    proj.settings.rotate = False
+    n = recrop(proj, proj.scans[0])
+    assert n == 2

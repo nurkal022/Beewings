@@ -90,3 +90,59 @@ class CropProject:
 
     def crops_dir(self, entry: ScanEntry) -> Path:
         return self.root / "crops" / Path(entry.path).stem
+
+
+import cv2
+
+from ..segment.crop import crop_box, crop_wing
+from ..segment.debug import render_overlay
+from ..segment.layout import reading_order
+from ..segment.slide import detect_label_region, estimate_background
+from ..segment.wings import find_wings, wing_mask
+
+
+def auto_detect(entry: ScanEntry, settings: Settings) -> None:
+    """Fill entry.label_box and entry.wing_boxes by running segmentation."""
+    img = cv2.imread(entry.path)
+    if img is None:
+        raise ValueError(f"cannot read image: {entry.path}")
+    bg = estimate_background(img)
+    if settings.label_frac is not None:
+        h, w = img.shape[:2]
+        label = (0, 0, int(round(settings.label_frac * w)), h)
+    else:
+        label = detect_label_region(img, bg)
+    mask = wing_mask(img, bg, delta=settings.delta, exclude=label)
+    boxes = find_wings(mask)
+    order = reading_order(boxes)
+    entry.label_box = label
+    entry.wing_boxes = [boxes[i] for i in order]
+
+
+def recrop(project: "CropProject", entry: ScanEntry) -> int:
+    """Write per-wing crops (+ label + debug) for one scan from its boxes.
+
+    Returns the number of wing crops written. Crops follow the manifest boxes
+    exactly (manual edits respected), not a fresh auto-detection.
+    """
+    img = cv2.imread(entry.path)
+    if img is None:
+        raise ValueError(f"cannot read image: {entry.path}")
+    bg = estimate_background(img)
+    stem = Path(entry.path).stem
+    out_dir = project.crops_dir(entry)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for n, box in enumerate(entry.wing_boxes):
+        patch = crop_wing(img, box, margin=project.settings.margin,
+                          rotate=project.settings.rotate, bg=bg)
+        cv2.imwrite(str(out_dir / f"{stem}_crop_{n}.jpg"), patch)
+    if entry.label_box is not None:
+        cv2.imwrite(str(out_dir / f"{stem}_label.jpg"),
+                    crop_box(img, entry.label_box, 0.02))
+    order = list(range(len(entry.wing_boxes)))
+    overlay = render_overlay(img, entry.wing_boxes, order, label_box=entry.label_box)
+    cv2.imwrite(str(out_dir / f"{stem}_debug.jpg"), overlay)
+
+    entry.cropped = True
+    return len(entry.wing_boxes)
