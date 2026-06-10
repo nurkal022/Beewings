@@ -29,3 +29,24 @@ def test_crop_worker_runs(qapp, scan_file, tmp_path):
     assert seen[-1][0] == seen[-1][1] == 1
 
 
+def test_box_canvas_selection_and_label(qapp):
+    import numpy as np
+    from beewings.pipeline.box_canvas import BoxEditorCanvas
+    c = BoxEditorCanvas()
+    img = np.full((200, 400, 3), 255, np.uint8)
+    c.set_scan(img, wing_boxes=[(10, 10, 50, 40), (100, 10, 50, 40)], label_box=None)
+    seen = []
+    c.selectionChanged.connect(seen.append)
+    c.select_box(1)
+    assert c.selected() == 1
+    assert seen[-1] == 1
+    c.delete_box(1)
+    assert c.selected() == -1
+    assert c.label_box() is None
+    c.begin_label_draw()
+    assert c._label_mode is True
+    c.set_label((0, 0, 20, 200))
+    assert c.label_box() == (0, 0, 20, 200)
+    assert c._label_mode is False
+    c.clear_label()
+    assert c.label_box() is None
