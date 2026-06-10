@@ -154,3 +154,39 @@ def test_landmark_tab_tree(qapp, tmp_path):
     assert parent.childCount() >= 1                      # wings listed
     # annotator's internal browser hidden in the tab
     assert tab.annot.image_list.isVisible() is False
+
+
+def test_crop_auto_confirms_when_work_exists(qapp, tmp_path, monkeypatch):
+    import cv2, numpy as np
+    from PyQt6.QtWidgets import QMessageBox
+    from beewings.pipeline.project import CropProject
+    from beewings.pipeline.pages import crop_page as cp_mod
+    from beewings.pipeline.pages.crop_page import CropPage
+    folder = tmp_path / "proj"; folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((100, 100, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    proj.scans[0].wing_boxes = [(5, 5, 20, 20)]   # existing manual work
+    page = CropPage({"project": proj})
+    page.enter()
+    # Decline the warning -> auto must NOT start a worker.
+    monkeypatch.setattr(QMessageBox, "warning",
+                        lambda *a, **k: QMessageBox.StandardButton.No)
+    page._auto()
+    assert page._worker is None
+
+
+def test_crop_auto_no_confirm_when_empty(qapp, tmp_path, monkeypatch):
+    import cv2, numpy as np
+    from PyQt6.QtWidgets import QMessageBox
+    from beewings.pipeline.project import CropProject
+    from beewings.pipeline.pages.crop_page import CropPage
+    folder = tmp_path / "proj"; folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((100, 100, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)        # no boxes yet
+    page = CropPage({"project": proj})
+    page.enter()
+    called = []
+    monkeypatch.setattr(QMessageBox, "warning",
+                        lambda *a, **k: called.append(1) or QMessageBox.StandardButton.No)
+    page._auto()
+    assert called == []   # no confirmation dialog when there is nothing to lose

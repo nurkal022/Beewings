@@ -157,6 +157,19 @@ class CropPage(QWidget):
         proj.save()
 
     def _auto(self) -> None:
+        proj: CropProject = self.ctx["project"]
+        has_work = any(s.wing_boxes or s.label_box for s in proj.scans)
+        if has_work:
+            resp = QMessageBox.warning(
+                self, "Авто-нарезка всех",
+                "Авто-нарезка заново определит рамки во ВСЕХ сплитах и перезапишет "
+                "текущую ручную правку — она будет потеряна, придётся размечать заново.\n\n"
+                "Продолжить?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if resp != QMessageBox.StandardButton.Yes:
+                return
         self._run(do_autodetect=True, do_recrop=False, refresh=True)
 
     def _recrop(self) -> None:
