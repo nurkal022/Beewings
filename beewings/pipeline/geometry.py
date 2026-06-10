@@ -22,6 +22,12 @@ def _corners(box: Box):
     return {"nw": (x, y), "ne": (x + w, y), "sw": (x, y + h), "se": (x + w, y + h)}
 
 
+def _sides(box: Box):
+    x, y, w, h = box
+    return {"n": (x + w / 2, y), "s": (x + w / 2, y + h),
+            "w": (x, y + h / 2), "e": (x + w, y + h / 2)}
+
+
 def hit_test(boxes: List[Box], px: int, py: int, handle_px: int = 8):
     """Return (index, handle) for the topmost box hit at (px, py), else (None, None).
 
@@ -31,6 +37,9 @@ def hit_test(boxes: List[Box], px: int, py: int, handle_px: int = 8):
     for idx in range(len(boxes) - 1, -1, -1):
         box = normalize_box(boxes[idx])
         for name, (cx, cy) in _corners(box).items():
+            if abs(px - cx) <= handle_px and abs(py - cy) <= handle_px:
+                return idx, name
+        for name, (cx, cy) in _sides(box).items():
             if abs(px - cx) <= handle_px and abs(py - cy) <= handle_px:
                 return idx, name
         x, y, w, h = box
@@ -52,4 +61,12 @@ def resize_box(box: Box, handle: Handle, dx: int, dy: int) -> Box:
         return normalize_box((x + dx, y, w - dx, h + dy))
     if handle == "se":
         return normalize_box((x, y, w + dx, h + dy))
+    if handle == "n":
+        return normalize_box((x, y + dy, w, h - dy))
+    if handle == "s":
+        return normalize_box((x, y, w, h + dy))
+    if handle == "w":
+        return normalize_box((x + dx, y, w - dx, h))
+    if handle == "e":
+        return normalize_box((x, y, w + dx, h))
     return box

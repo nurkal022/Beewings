@@ -35,3 +35,23 @@ def test_resize_nw_corner():
 
 def test_resize_move():
     assert resize_box((10, 10, 100, 80), "move", 7, -3) == (17, 7, 100, 80)
+
+
+def test_hit_test_side_handles():
+    boxes = [(10, 10, 100, 80)]
+    assert hit_test(boxes, 60, 10, 8) == (0, "n")
+    assert hit_test(boxes, 60, 90, 8) == (0, "s")
+    assert hit_test(boxes, 10, 50, 8) == (0, "w")
+    assert hit_test(boxes, 110, 50, 8) == (0, "e")
+
+
+def test_corner_beats_side():
+    boxes = [(10, 10, 100, 80)]
+    assert hit_test(boxes, 10, 10, 8) == (0, "nw")
+
+
+def test_resize_sides():
+    assert resize_box((10, 10, 100, 80), "n", 0, 5) == (10, 15, 100, 75)
+    assert resize_box((10, 10, 100, 80), "s", 0, 5) == (10, 10, 100, 85)
+    assert resize_box((10, 10, 100, 80), "w", 5, 0) == (15, 10, 95, 80)
+    assert resize_box((10, 10, 100, 80), "e", 5, 0) == (10, 10, 105, 80)
