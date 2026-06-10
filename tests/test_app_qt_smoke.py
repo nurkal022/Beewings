@@ -131,3 +131,26 @@ def test_crop_page_list_delete_signal(qapp, tmp_path):
     page.objects.setCurrentRow(0)
     page.objects.deleteRequested.emit()    # simulate Del keypress on the list
     assert page.objects.count() == 1
+
+
+def test_landmark_tab_tree(qapp, tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject, auto_detect, recrop
+    from beewings.app.project_window import LandmarkTab
+    folder = tmp_path / "proj"; folder.mkdir()
+    # one real scan -> auto-detect + recrop so crops exist
+    img = np.full((300, 600, 3), 255, np.uint8)
+    cv2.ellipse(img, (200, 150), (120, 50), 0, 0, 360, (120, 120, 120), -1)
+    cv2.ellipse(img, (430, 150), (120, 50), 0, 0, 360, (120, 120, 120), -1)
+    cv2.imwrite(str(folder / "a.jpg"), img)
+    proj = CropProject.open_folder(folder)
+    auto_detect(proj.scans[0], proj.settings)
+    recrop(proj, proj.scans[0])
+    tab = LandmarkTab({"project": proj})
+    tab.enter()
+    assert tab.tree.topLevelItemCount() == 1            # one split
+    parent = tab.tree.topLevelItem(0)
+    tab.tree.expandItem(parent)                          # lazy-populate wings
+    assert parent.childCount() >= 1                      # wings listed
+    # annotator's internal browser hidden in the tab
+    assert tab.annot.image_list.isVisible() is False

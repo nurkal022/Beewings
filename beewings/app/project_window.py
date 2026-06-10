@@ -4,9 +4,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMainWindow, QMessageBox,
-                             QProgressBar, QPushButton, QStatusBar, QTabWidget,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (QHBoxLayout, QMainWindow, QMessageBox, QProgressBar,
+                             QPushButton, QStatusBar, QTabWidget, QTreeWidget,
+                             QTreeWidgetItem, QVBoxLayout, QWidget)
+
+from ..core.profiles import get_profile
+from ..core.schema import annotation_path, load_annotation
 
 from ..annotator.annotator_widget import AnnotatorWidget
 from ..pipeline.pages.crop_page import CropPage
@@ -15,8 +19,18 @@ from ..pipeline.project import CropProject
 from ..pipeline.workers import LandmarkWorker
 
 
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+_ROLE = Qt.ItemDataRole.UserRole
+
+
+def _crop_files(cdir):
+    skip = ("_label", "_debug")
+    return sorted(p for p in cdir.glob("*")
+                  if p.suffix.lower() in _IMAGE_EXTS and not any(t in p.stem for t in skip))
+
+
 class LandmarkTab(QWidget):
-    """Pick a split, run ML on its crops, edit points in the embedded annotator."""
+    """Tree (scan -> wings) driving the embedded annotator; ML over all crops."""
 
     def __init__(self, ctx: dict, parent=None):
         super().__init__(parent)
@@ -24,9 +38,11 @@ class LandmarkTab(QWidget):
         self._worker = None
         root = QHBoxLayout(self)
         left = QVBoxLayout()
-        self.split_list = QListWidget()
-        self.split_list.currentRowChanged.connect(self._show_split)
-        left.addWidget(self.split_list)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.itemExpanded.connect(self._populate)
+        self.tree.itemClicked.connect(self._on_item_clicked)
+        left.addWidget(self.tree)
         self.run_btn = QPushButton("\U0001f9e0 Расставить точки (ML)")
         self.run_btn.clicked.connect(self._run)
         left.addWidget(self.run_btn)
@@ -34,22 +50,65 @@ class LandmarkTab(QWidget):
         left.addWidget(self.progress)
         root.addLayout(left, 0)
         self.annot = AnnotatorWidget()
+        self.annot.set_browser_visible(False)
         root.addWidget(self.annot, 1)
 
     def enter(self) -> None:
         proj: CropProject = self.ctx["project"]
-        self.split_list.clear()
-        self.split_list.addItems([Path(s.path).name for s in proj.scans])
-        if proj.scans:
-            self.split_list.setCurrentRow(0)
+        self.tree.clear()
+        for i, scan in enumerate(proj.scans):
+            item = QTreeWidgetItem([Path(scan.path).name])
+            item.setData(0, _ROLE, ("scan", i))
+            QTreeWidgetItem(item, ["…"])  # placeholder so it is expandable
+            self.tree.addTopLevelItem(item)
 
-    def _show_split(self, row: int) -> None:
+    def _populate(self, parent: "QTreeWidgetItem") -> None:
+        kind, idx = parent.data(0, _ROLE)
+        if kind != "scan":
+            return
+        if parent.childCount() == 1 and parent.child(0).data(0, _ROLE) is None:
+            parent.takeChildren()  # drop placeholder
+        else:
+            return  # already populated
         proj: CropProject = self.ctx["project"]
-        if 0 <= row < len(proj.scans):
-            self._row = row
-            cdir = proj.crops_dir(proj.scans[row])
-            if cdir.exists():
-                self.annot.load_folder(cdir)
+        cdir = proj.crops_dir(proj.scans[idx])
+        crops = _crop_files(cdir) if cdir.exists() else []
+        if not crops:
+            child = QTreeWidgetItem(parent, ["(не нарезано)"])
+            child.setDisabled(True)
+            return
+        prof = get_profile(proj.settings.profile)
+        for cp in crops:
+            child = QTreeWidgetItem(parent, [self._wing_label(cp, cdir, prof)])
+            child.setData(0, _ROLE, ("wing", idx, str(cp)))
+
+    def _wing_label(self, cp, cdir, prof) -> str:
+        ann = load_annotation(annotation_path(cp, cdir))
+        if ann is None:
+            return f"○  {cp.name}"
+        done, total = ann.progress(prof.ids)
+        mark = "✓" if done == total and total else "●"
+        return f"{mark}  {cp.name}"
+
+    def _on_item_clicked(self, item: "QTreeWidgetItem", _col: int) -> None:
+        data = item.data(0, _ROLE)
+        if not data:
+            return
+        if data[0] == "scan":
+            item.setExpanded(True)
+            if item.childCount() and item.child(0).data(0, _ROLE):
+                self._open_wing(item.child(0))
+        elif data[0] == "wing":
+            self._open_wing(item)
+
+    def _open_wing(self, item: "QTreeWidgetItem") -> None:
+        data = item.data(0, _ROLE)
+        if not data or data[0] != "wing":
+            return
+        _, idx, crop = data
+        proj: CropProject = self.ctx["project"]
+        cdir = proj.crops_dir(proj.scans[idx])
+        self.annot.show_image(cdir, Path(crop))
 
     def _run(self) -> None:
         if self._worker is not None and self._worker.isRunning():
@@ -58,8 +117,7 @@ class LandmarkTab(QWidget):
         self.progress.setRange(0, 0)
         self.run_btn.setEnabled(False)
         self._worker = LandmarkWorker(proj)
-        self._worker.progress.connect(
-            lambda i, t, name: self.progress.setFormat(name))
+        self._worker.progress.connect(lambda i, t, name: self.progress.setFormat(name))
         self._worker.failed.connect(
             lambda path, err: QMessageBox.warning(self, "Ошибка разметки", f"{path}\n{err}"))
         self._worker.finished_ok.connect(self._done)
@@ -69,7 +127,7 @@ class LandmarkTab(QWidget):
         self.progress.setRange(0, 1)
         self.progress.setValue(1)
         self.run_btn.setEnabled(True)
-        self._show_split(getattr(self, "_row", 0))
+        self.enter()  # rebuild tree (refresh progress marks)
 
 
 class ProjectWindow(QMainWindow):
