@@ -190,3 +190,14 @@ def test_crop_auto_no_confirm_when_empty(qapp, tmp_path, monkeypatch):
                         lambda *a, **k: called.append(1) or QMessageBox.StandardButton.No)
     page._auto()
     assert called == []   # no confirmation dialog when there is nothing to lose
+
+
+def test_side_panel_is_scrollable(qapp):
+    from PyQt6.QtWidgets import QScrollArea
+    from beewings.annotator.side_panel import SidePanel
+    sp = SidePanel()
+    assert sp.findChild(QScrollArea) is not None
+    # methodology switch must not raise and list stays usable
+    sp.set_methodology("alpatov", "Алпатов 12 точек")
+    sp.set_methodology("tofilski", "Тофильский 19 точек")
+    assert sp.list is not None

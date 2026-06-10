@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -62,7 +63,16 @@ class SidePanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(self._scroll)
+        content = QWidget()
+        self._scroll.setWidget(content)
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
@@ -90,6 +100,7 @@ class SidePanel(QWidget):
 
         self.methodology_info = QLabel("")
         self.methodology_info.setWordWrap(True)
+        self.methodology_info.setMinimumHeight(46)
         self.methodology_info.setStyleSheet(
             "QLabel { color: #aaa; font-size: 10px; padding: 4px 2px 0 2px; }"
         )
