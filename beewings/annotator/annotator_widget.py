@@ -100,6 +100,8 @@ class AnnotatorWidget(QWidget):
         self._cursor_xy: Optional[tuple] = None
         self._ml_model = None
         self._ml_ckpt_path: Optional[str] = None
+        self._ml_worker = None
+        self._ml_ckpt_pending = None
 
         # ---- widgets
         self.image_list = ImageList()
@@ -736,15 +738,15 @@ class AnnotatorWidget(QWidget):
         self._after_change(advance=False)
 
     def _run_ml_detect(self) -> None:
-        """Run trained UNet ML detector on the current image."""
+        """Run the trained UNet detector on the current image (off the GUI thread)."""
         if sip.isdeleted(self):
             return
         if self._current_ann is None or self._current_image_path is None or self._project_dir is None:
             return
-        # Each profile uses its OWN checkpoint — Alpatov and Tofilski are
-        # separate methodologies, never share weights.
-        ckpt_filename = self._profile.checkpoint_name or "tofilski19.pt"
+        if getattr(self, "_ml_worker", None) is not None and self._ml_worker.isRunning():
+            return
 
+        ckpt_filename = self._profile.checkpoint_name or "tofilski19.pt"
         env_ckpt = os.environ.get("BEEWINGS_ML_CHECKPOINT", "").strip()
         ckpt_candidates: list[Path] = []
         if env_ckpt:
@@ -752,7 +754,6 @@ class AnnotatorWidget(QWidget):
         ckpt_candidates.extend([
             self._project_dir / "checkpoints" / ckpt_filename,
             Path("checkpoints") / ckpt_filename,
-            # back-compat: legacy default name + old training dir
             Path("checkpoints/best.pt") if ckpt_filename == "tofilski19.pt" else Path(""),
             Path("runs/unet19_v1/best.pt") if ckpt_filename == "tofilski19.pt" else Path(""),
             Path("runs/unet12_v1/best.pt") if ckpt_filename == "alpatov12.pt" else Path(""),
@@ -761,64 +762,52 @@ class AnnotatorWidget(QWidget):
         if ckpt is None:
             QMessageBox.warning(
                 self, "Модель не найдена",
-                f"Для профиля «{self._profile.name}» нужен checkpoint "
-                f"{ckpt_filename}.\n\n"
-                f"Положи файл в один из путей:\n"
-                f"  • checkpoints/{ckpt_filename}\n"
+                f"Для профиля «{self._profile.name}» нужен checkpoint {ckpt_filename}.\n\n"
+                f"Положи файл в:\n  • checkpoints/{ckpt_filename}\n"
                 f"  • <папка_проекта>/checkpoints/{ckpt_filename}\n"
-                f"  • или укажи через BEEWINGS_ML_CHECKPOINT env var\n\n"
-                f"Алпатов и Тофильский — разные методики, у каждой своя модель."
-            )
+                f"  • или BEEWINGS_ML_CHECKPOINT env var")
             return
-
-        # Sanity check: loaded model must match profile point count.
-        # We discover this by peeking at the checkpoint config.
         try:
-            import torch
-            peek = torch.load(ckpt, map_location="cpu", weights_only=False)
-            ckpt_n = peek["config"]["n_points"]
-            expected_n = len(self._profile.ids)
-            # 8-point Alpatov is served by the 12-point model; we'll just take first 8.
-            if ckpt_n != expected_n and not (
-                self._profile.methodology_id == "alpatov" and ckpt_n == 12 and expected_n == 8
-            ):
-                QMessageBox.critical(
-                    self, "Несовпадение схемы",
-                    f"Checkpoint {ckpt.name} обучен на {ckpt_n} точек, "
-                    f"а профиль «{self._profile.name}» ожидает {expected_n}. "
-                    f"Это разные методики — нельзя смешивать."
-                )
-                return
-        except Exception:
-            pass  # if peek fails, let load_ml below produce the real error
-        try:
-            from ..ml.inference import load as load_ml, predict as ml_predict
+            from .ml_worker import MLDetectWorker
         except ImportError as ex:
-            QMessageBox.critical(self, "ML не установлен",
-                                 f"Не установлены ML-зависимости:\n{ex}\n\n"
-                                 f"Запусти: pip install torch torchvision albumentations")
+            QMessageBox.critical(self, "ML не установлен", f"{ex}")
             return
 
-        try:
-            self.status.emit(f"Загружаю модель из {ckpt} ...")
-            self.repaint()
-            if getattr(self, "_ml_model", None) is None or self._ml_ckpt_path != str(ckpt):
-                self._ml_model = load_ml(ckpt, device="auto")
-                self._ml_ckpt_path = str(ckpt)
-            with self._current_image_path.open("rb") as f:
-                buf = np.frombuffer(f.read(), dtype=np.uint8)
-            bgr = cv2.imdecode(buf, cv2.IMREAD_COLOR)
-            self.status.emit("Применяю модель (TTA flip) …")
-            self.repaint()
-            pred, conf = ml_predict(self._ml_model, bgr, tta=True,
-                                    return_confidence=True)
-            self._last_ml_confidences = conf
-        except Exception as ex:
-            QMessageBox.critical(self, "Ошибка ML-детектора", f"{type(ex).__name__}: {ex}")
-            return
+        # Read the image bytes on the GUI thread (cheap), heavy work goes to the worker.
+        with self._current_image_path.open("rb") as f:
+            buf = np.frombuffer(f.read(), dtype=np.uint8)
+        bgr = cv2.imdecode(buf, cv2.IMREAD_COLOR)
 
-        # Restrict to landmarks belonging to the current profile (e.g. the
-        # 8-point Alpatov subset of the 12-point model output).
+        expected_n = len(self._profile.ids)
+        allow_alpatov8 = (self._profile.methodology_id == "alpatov" and expected_n == 8)
+        cached = self._ml_model if self._ml_ckpt_path == str(ckpt) else None
+
+        self.side.ml_btn.setEnabled(False)
+        self.status.emit("Определяю точки (в фоне)…")
+        self._ml_ckpt_pending = str(ckpt)
+        self._ml_worker = MLDetectWorker(
+            ckpt, bgr, tta=True, expected_n=expected_n,
+            allow_alpatov8=allow_alpatov8, model=cached)
+        self._ml_worker.done.connect(self._on_ml_done)
+        self._ml_worker.failed.connect(self._on_ml_failed)
+        self._ml_worker.start()
+
+    def _on_ml_failed(self, msg: str) -> None:
+        if sip.isdeleted(self):
+            return
+        self.side.ml_btn.setEnabled(True)
+        title = "Несовпадение схемы" if msg.startswith("Несовпадение") else "Ошибка ML-детектора"
+        QMessageBox.critical(self, title, msg)
+
+    def _on_ml_done(self, pred, conf, model) -> None:
+        if sip.isdeleted(self):
+            return
+        self._ml_model = model
+        self._ml_ckpt_path = getattr(self, "_ml_ckpt_pending", None)
+        self.side.ml_btn.setEnabled(True)
+        if self._current_ann is None:
+            return
+        self._last_ml_confidences = conf
         active_ids = set(self._profile.ids)
         self._undo.push(self._current_ann.landmarks)
         applied = 0
@@ -827,7 +816,6 @@ class AnnotatorWidget(QWidget):
             if lid not in active_ids:
                 continue
             self._current_ann.set_landmark(lid, x, y)
-            # Mark low-confidence landmarks as uncertain — flags for manual review.
             if conf.get(lid, 1.0) < 0.45:
                 lm = self._current_ann.get_landmark(lid)
                 if lm is not None:
@@ -838,11 +826,9 @@ class AnnotatorWidget(QWidget):
         self.canvas.set_current_id(self._current_lm_id)
         self.side.refresh(self._current_ann)
         self._save_current()
-
         active_conf = [conf[lid] for lid in active_ids if lid in conf]
         mean_conf = sum(active_conf) / max(1, len(active_conf))
-        msg = (f"ML: {applied}/{len(active_ids)} точек, "
-               f"средняя уверенность {mean_conf:.2f}")
+        msg = f"ML: {applied}/{len(active_ids)} точек, средняя уверенность {mean_conf:.2f}"
         if low_conf_ids:
             msg += f" — проверь точки {low_conf_ids}"
         self.status.emit(msg)
