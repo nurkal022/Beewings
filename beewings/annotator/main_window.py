@@ -139,6 +139,10 @@ class MainWindow(QMainWindow):
         open_act.triggered.connect(self._on_open_folder)
         file_menu.addAction(open_act)
 
+        pipeline_act = QAction("🧩 Конвейер нарезки…", self)
+        pipeline_act.triggered.connect(self._on_open_pipeline)
+        file_menu.addAction(pipeline_act)
+
         file_menu.addSeparator()
 
         for fmt, handler in (
@@ -309,6 +313,24 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Alt+Shift+Down"),  self, activated=lambda: self._nudge_current(0, +1, fine=True))
 
     # ---- folder / image loading --------------------------------------------
+
+    def _on_open_pipeline(self) -> None:
+        from ..pipeline.wizard import PipelineWizard
+        self._pipeline = PipelineWizard()
+        # Let the wizard hand a finished crops folder back to this annotator.
+        self._pipeline.ctx["open_in_annotator"] = self._open_crops_from_pipeline
+        self._pipeline.show()
+
+    def _open_crops_from_pipeline(self, crops_root) -> None:
+        from pathlib import Path
+        crops_root = Path(crops_root)
+        # crops_root contains one subfolder per scan; open the first that exists,
+        # or the crops_root itself if it directly holds images.
+        subdirs = [d for d in crops_root.glob("*") if d.is_dir()]
+        target = subdirs[0] if subdirs else crops_root
+        self.load_folder(target)
+        if hasattr(self, "_pipeline"):
+            self._pipeline.raise_()
 
     def _on_open_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку с изображениями")
