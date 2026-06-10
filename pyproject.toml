@@ -32,6 +32,7 @@ beewings-ml-batch = "beewings.ml.batch:main"
 beewings-ml-report = "beewings.ml.report:main"
 beewings-classify = "beewings.ml.classify:main"
 beewings-crop = "beewings.segment.cli:main"
+beewings-pipeline = "beewings.pipeline.wizard:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

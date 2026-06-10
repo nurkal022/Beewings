@@ -42,3 +42,24 @@ def synthetic_scan():
         "shape": (h, w),
     }
     return img, meta
+
+
+import os
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """A headless QApplication for widget construction tests."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    return app
+
+
+@pytest.fixture
+def scan_file(synthetic_scan, tmp_path):
+    """Write the synthetic scan to a temp .jpg and return its Path."""
+    img, meta = synthetic_scan
+    path = tmp_path / "scan_0001.jpg"
+    cv2.imwrite(str(path), img)
+    return path, meta
