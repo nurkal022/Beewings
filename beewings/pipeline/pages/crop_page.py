@@ -4,8 +4,21 @@ from __future__ import annotations
 from pathlib import Path
 
 import cv2
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QMessageBox,
                              QProgressBar, QPushButton, QVBoxLayout, QWidget)
+
+
+class _ObjectList(QListWidget):
+    """List that emits deleteRequested on Del/Backspace."""
+
+    deleteRequested = pyqtSignal()
+
+    def keyPressEvent(self, ev) -> None:
+        if ev.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self.deleteRequested.emit()
+            return
+        super().keyPressEvent(ev)
 
 from ..box_canvas import BoxEditorCanvas
 from ..project import CropProject
@@ -41,8 +54,9 @@ class CropPage(QWidget):
 
         mid = QVBoxLayout()
         mid.addWidget(QLabel("Найденные крылья:"))
-        self.objects = QListWidget()
+        self.objects = _ObjectList()
         self.objects.currentRowChanged.connect(self._on_object_selected)
+        self.objects.deleteRequested.connect(self._delete_object)
         mid.addWidget(self.objects)
         self.del_obj_btn = QPushButton("Удалить крыло")
         self.del_obj_btn.clicked.connect(self._delete_object)
@@ -60,6 +74,7 @@ class CropPage(QWidget):
         self.canvas = BoxEditorCanvas()
         self.canvas.boxesChanged.connect(self._on_boxes_changed)
         self.canvas.selectionChanged.connect(self._on_canvas_selection)
+        self.canvas.labelSelected.connect(self._on_label_selected)
         root.addWidget(self.canvas, 1)
 
     def enter(self) -> None:
@@ -105,6 +120,16 @@ class CropPage(QWidget):
         self._syncing = True
         self.objects.setCurrentRow(idx)
         self._syncing = False
+
+    def _on_label_selected(self, on: bool) -> None:
+        if on:
+            self._syncing = True
+            self.objects.clearSelection()
+            self.objects.setCurrentRow(-1)
+            self._syncing = False
+            self.label_status.setText("Этикетка: выбрана")
+        else:
+            self._refresh_objects()
 
     def _delete_object(self) -> None:
         idx = self.objects.currentRow()

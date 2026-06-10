@@ -116,3 +116,18 @@ def test_annotator_browser_and_show_image(qapp, tmp_path):
     assert w.image_list.isVisible() is False
     w.show_image(d, d / "w_1.jpg")
     assert w.image_list.current_path() == d / "w_1.jpg"
+
+
+def test_crop_page_list_delete_signal(qapp, tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject
+    from beewings.pipeline.pages.crop_page import CropPage
+    folder = tmp_path / "proj"; folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((200, 300, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    proj.scans[0].wing_boxes = [(10, 10, 40, 30), (80, 10, 40, 30)]
+    page = CropPage({"project": proj})
+    page.enter()
+    page.objects.setCurrentRow(0)
+    page.objects.deleteRequested.emit()    # simulate Del keypress on the list
+    assert page.objects.count() == 1
