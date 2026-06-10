@@ -62,6 +62,10 @@ class LandmarkWorker(QThread):
                     cdir,
                     profile_name=self.project.settings.profile,
                     checkpoint=Path(self.project.settings.checkpoint),
+                    # CPU: this is a background QThread; GPU (MPS/Metal) here
+                    # contends with the main thread's canvas rendering and
+                    # crashes natively on macOS.
+                    device="cpu",
                     progress_cb=lambda i, t, name, e=entry: self.progress.emit(
                         i, t, f"{Path(e.path).stem}: {name}"),
                     should_cancel=self.isInterruptionRequested,

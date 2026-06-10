@@ -42,7 +42,12 @@ class MLDetectWorker(QThread):
                         f"{self.expected_n}. Это разные методики.")
                     return
                 from ..ml.inference import load as load_ml
-                model = load_ml(self.checkpoint, device="auto")
+                # CPU on purpose: this runs on a background QThread. Using the
+                # GPU (MPS/Metal) here would contend with the main thread's
+                # Metal rendering of the canvas and crash natively on macOS.
+                # The model is small and inference is backgrounded, so CPU is
+                # fast enough and keeps the UI responsive.
+                model = load_ml(self.checkpoint, device="cpu")
             from ..ml.inference import predict as ml_predict
             pred, conf = ml_predict(model, self.bgr, tta=self.tta,
                                     return_confidence=True)
