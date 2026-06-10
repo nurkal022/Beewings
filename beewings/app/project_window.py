@@ -4,8 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMainWindow, QProgressBar,
-                             QPushButton, QStatusBar, QTabWidget, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMainWindow, QMessageBox,
+                             QProgressBar, QPushButton, QStatusBar, QTabWidget,
+                             QVBoxLayout, QWidget)
 
 from ..annotator.annotator_widget import AnnotatorWidget
 from ..pipeline.pages.crop_page import CropPage
@@ -57,6 +58,10 @@ class LandmarkTab(QWidget):
         self.progress.setRange(0, 0)
         self.run_btn.setEnabled(False)
         self._worker = LandmarkWorker(proj)
+        self._worker.progress.connect(
+            lambda i, t, name: self.progress.setFormat(name))
+        self._worker.failed.connect(
+            lambda path, err: QMessageBox.warning(self, "Ошибка разметки", f"{path}\n{err}"))
         self._worker.finished_ok.connect(self._done)
         self._worker.start()
 

@@ -724,7 +724,6 @@ class AnnotatorWidget(QWidget):
         """Run trained UNet ML detector on the current image."""
         if self._current_ann is None or self._current_image_path is None or self._project_dir is None:
             return
-        import os
         # Each profile uses its OWN checkpoint — Alpatov and Tofilski are
         # separate methodologies, never share weights.
         ckpt_filename = self._profile.checkpoint_name or "tofilski19.pt"

@@ -112,3 +112,32 @@ def test_progress_counts(tmp_path):
     proj.scans[0].cropped = True
     prog = proj.progress()
     assert prog == {"n_splits": 2, "n_cropped": 1, "n_landmarked": 0}
+
+
+def test_progress_landmarked_requires_real_landmarks(tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject
+    from beewings.core.profiles import get_profile
+    from beewings.core.schema import (Landmark, WingAnnotation,
+                                       annotation_path, save_annotation)
+    folder = tmp_path / "p"
+    folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((10, 10, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    entry = proj.scans[0]
+    entry.cropped = True
+    cdir = proj.crops_dir(entry)
+    cdir.mkdir(parents=True, exist_ok=True)
+    crop = cdir / "a_crop_0.jpg"
+    cv2.imwrite(str(crop), np.full((10, 10, 3), 255, np.uint8))
+    prof = get_profile("Алпатов 12 точек")
+    # empty annotation -> NOT landmarked
+    empty = WingAnnotation(image=crop.name, image_size=(10, 10),
+                           profile=prof.name, landmarks=[])
+    save_annotation(empty, annotation_path(crop, cdir, prof.methodology_id))
+    assert proj.progress()["n_landmarked"] == 0
+    # with a real landmark -> landmarked
+    filled = WingAnnotation(image=crop.name, image_size=(10, 10), profile=prof.name,
+                            landmarks=[Landmark(id=1, x=1.0, y=1.0)])
+    save_annotation(filled, annotation_path(crop, cdir, prof.methodology_id))
+    assert proj.progress()["n_landmarked"] == 1

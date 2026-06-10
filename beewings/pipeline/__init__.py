@@ -1,2 +1,2 @@
-"""In-window pipeline wizard: scans -> crop -> landmarks -> export."""
+"""Auto-crop pipeline: segmentation, project model, workers, export."""
 from __future__ import annotations

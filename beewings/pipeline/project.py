@@ -109,13 +109,20 @@ class CropProject:
         return proj
 
     def progress(self) -> dict:
-        """Summary counts for the Home cards."""
+        """Summary counts for the Home cards. A scan counts as landmarked only
+        when at least one of its crops has an annotation with >=1 landmark."""
+        from ..core.schema import load_annotation
         n_landmarked = 0
         for entry in self.scans:
             cdir = self.crops_dir(entry)
-            ann = cdir / "annotations"
-            if entry.cropped and ann.exists() and any(ann.rglob("*.json")):
-                n_landmarked += 1
+            ann_dir = cdir / "annotations"
+            if not (entry.cropped and ann_dir.exists()):
+                continue
+            for jf in ann_dir.rglob("*.json"):
+                a = load_annotation(jf)
+                if a is not None and len(a.landmarks) > 0:
+                    n_landmarked += 1
+                    break
         return {
             "n_splits": len(self.scans),
             "n_cropped": sum(1 for e in self.scans if e.cropped),
