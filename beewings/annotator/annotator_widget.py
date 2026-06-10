@@ -288,6 +288,16 @@ class AnnotatorWidget(QWidget):
 
     # ---- folder / image loading --------------------------------------------
 
+    def set_browser_visible(self, visible: bool) -> None:
+        self.image_list.setVisible(visible)
+
+    def show_image(self, folder, path) -> None:
+        from pathlib import Path as _P
+        folder, path = _P(folder), _P(path)
+        if self._project_dir != folder:
+            self.load_folder(folder)
+        self.image_list.select_path(path)
+
     def open_folder_dialog(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку с изображениями")
         if folder:

@@ -59,6 +59,14 @@ class ImageList(QWidget):
             return None
         return self._paths[row]
 
+    def select_path(self, path) -> bool:
+        target = str(path)
+        for i, p in enumerate(self._paths):
+            if str(p) == target:
+                self.list.setCurrentRow(i)
+                return True
+        return False
+
     def previous_path(self) -> Optional[Path]:
         row = self.list.currentRow()
         if row <= 0:

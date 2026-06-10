@@ -90,3 +90,29 @@ def test_crop_page_unreadable_scan_does_not_corrupt(qapp, tmp_path):
     page._delete_object()
     assert proj.scans[0].wing_boxes == []
     assert proj.scans[1].wing_boxes == []
+
+
+def test_image_list_select_path(qapp, tmp_path):
+    import cv2, numpy as np
+    from beewings.annotator.image_list import ImageList
+    from beewings.core.profiles import get_profile
+    for n in ("w0.jpg", "w1.jpg"):
+        cv2.imwrite(str(tmp_path / n), np.full((20, 20, 3), 255, np.uint8))
+    il = ImageList()
+    il.load_folder(tmp_path, get_profile("Алпатов 12 точек"))
+    assert il.select_path(tmp_path / "w1.jpg") is True
+    assert il.current_path() == tmp_path / "w1.jpg"
+    assert il.select_path(tmp_path / "nope.jpg") is False
+
+
+def test_annotator_browser_and_show_image(qapp, tmp_path):
+    import cv2, numpy as np
+    from beewings.annotator.annotator_widget import AnnotatorWidget
+    d = tmp_path / "crops"; d.mkdir()
+    for i in range(2):
+        cv2.imwrite(str(d / f"w_{i}.jpg"), np.full((30, 60, 3), 255, np.uint8))
+    w = AnnotatorWidget()
+    w.set_browser_visible(False)
+    assert w.image_list.isVisible() is False
+    w.show_image(d, d / "w_1.jpg")
+    assert w.image_list.current_path() == d / "w_1.jpg"
