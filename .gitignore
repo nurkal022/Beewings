@@ -30,3 +30,5 @@ image copy.png
 
 # OS
 .DS_Store
+workflow_check/
+crop_preview/
