@@ -53,6 +53,8 @@ def test_export_all(tmp_path):
     report = json.loads((out / "report.json").read_text(encoding="utf-8"))
     assert report["n_wings"] == 2
     assert report["n_scans"] == 1
+    assert "index_means" in report
+    assert "uncertain_points" in report
 
 
 def test_export_subset_only_summary(tmp_path):

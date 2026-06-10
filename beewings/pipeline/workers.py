@@ -26,6 +26,8 @@ class CropWorker(QThread):
     def run(self) -> None:
         total = len(self.project.scans)
         for i, entry in enumerate(self.project.scans, start=1):
+            if self.isInterruptionRequested():
+                break
             try:
                 if self.do_autodetect:
                     auto_detect(entry, self.project.settings)
@@ -52,6 +54,8 @@ class LandmarkWorker(QThread):
     def run(self) -> None:
         cropped = [e for e in self.project.scans if e.cropped]
         for entry in cropped:
+            if self.isInterruptionRequested():
+                break
             cdir = self.project.crops_dir(entry)
             try:
                 run_landmarks(
@@ -60,6 +64,7 @@ class LandmarkWorker(QThread):
                     checkpoint=Path(self.project.settings.checkpoint),
                     progress_cb=lambda i, t, name, e=entry: self.progress.emit(
                         i, t, f"{Path(e.path).stem}: {name}"),
+                    should_cancel=self.isInterruptionRequested,
                 )
             except Exception as exc:
                 self.failed.emit(entry.path, f"{type(exc).__name__}: {exc}")

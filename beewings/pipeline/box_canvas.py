@@ -37,6 +37,7 @@ class BoxEditorCanvas(QWidget):
         self._handle = None
         self._drag_last: Optional[QPoint] = None
         self._new_origin = None
+        self._preview = None
 
     def set_scan(self, img_bgr: np.ndarray, wing_boxes: List[Box],
                  label_box: Optional[Box]) -> None:
@@ -94,6 +95,13 @@ class BoxEditorCanvas(QWidget):
         p.setPen(pen)
         for (x, y, w, h) in self._wing:
             p.drawRect(x, y, w, h)
+        if self._preview is not None:
+            pen.setStyle(Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            px, py, pw, ph = self._preview
+            p.drawRect(px, py, pw, ph)
+            pen.setStyle(Qt.PenStyle.SolidLine)
+            p.setPen(pen)
         if self._label:
             pen.setColor(Qt.GlobalColor.red); p.setPen(pen)
             x, y, w, h = self._label
@@ -137,6 +145,7 @@ class BoxEditorCanvas(QWidget):
                 self._wing.append(box)
                 self.boxesChanged.emit()
             self._new_origin = None
+            self._preview = None
             self.update()
         elif self._sel is not None:
             self._wing[self._sel] = normalize_box(self._wing[self._sel])

@@ -89,10 +89,20 @@ def export_protocol(project: CropProject, out_dir: Path,
         export_tps(annotations, out_dir / "all_wings.tps")
 
     if "report" in include:
+        index_acc: Dict[str, list] = {}
+        uncertain = 0
+        for _, _, ann in items:
+            coords = {lm.id: (lm.x, lm.y) for lm in ann.landmarks}
+            uncertain += sum(1 for lm in ann.landmarks if lm.uncertain)
+            for res in compute_all_alpatov(coords):
+                if res.value is not None:
+                    index_acc.setdefault(res.name, []).append(res.value)
         report = {
             "profile": prof.name,
             "n_scans": sum(1 for e in project.scans if e.cropped),
             "n_wings": len(items),
+            "uncertain_points": uncertain,
+            "index_means": {k: round(sum(v) / len(v), 4) for k, v in index_acc.items() if v},
         }
         (out_dir / "report.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

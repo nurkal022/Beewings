@@ -24,7 +24,7 @@ def _crop_images(crops_dir: Path):
 
 def run_landmarks(crops_dir: Path, profile_name: str, checkpoint: Path,
                   device: str = "auto", tta: bool = False,
-                  progress_cb: ProgressCb = None) -> int:
+                  progress_cb: ProgressCb = None, should_cancel=None) -> int:
     """Predict landmarks for every crop in `crops_dir`, saving annotation JSONs
     next to them (in the layout the annotator reads). Returns the count done."""
     crops_dir = Path(crops_dir)
@@ -33,6 +33,8 @@ def run_landmarks(crops_dir: Path, profile_name: str, checkpoint: Path,
     images = _crop_images(crops_dir)
     total = len(images)
     for i, img_path in enumerate(images, start=1):
+        if should_cancel is not None and should_cancel():
+            return i - 1
         bgr = cv2.imread(str(img_path))
         if bgr is None:
             if progress_cb:
