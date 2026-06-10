@@ -73,11 +73,12 @@ class CropPage(QWidget):
         proj: CropProject = self.ctx["project"]
         if not (0 <= row < len(proj.scans)):
             return
-        self._row = row
         entry = proj.scans[row]
         img = cv2.imread(entry.path)
-        if img is not None:
-            self.canvas.set_scan(img, entry.wing_boxes, entry.label_box)
+        if img is None:
+            return  # unreadable: keep previous scan/_row intact, don't corrupt
+        self._row = row
+        self.canvas.set_scan(img, entry.wing_boxes, entry.label_box)
         self._refresh_objects()
 
     def _refresh_objects(self) -> None:

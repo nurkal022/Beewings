@@ -68,3 +68,25 @@ def test_crop_page_objects_panel(qapp, tmp_path):
     assert page.canvas.selected() == 1
     page._delete_object()
     assert page.objects.count() == 2
+
+
+def test_crop_page_unreadable_scan_does_not_corrupt(qapp, tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject, ScanEntry
+    from beewings.pipeline.pages.crop_page import CropPage
+    folder = tmp_path / "proj"; folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((100, 100, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    proj.scans[0].wing_boxes = [(5, 5, 20, 20)]
+    # add a second scan entry pointing at a missing file
+    proj.scans.append(ScanEntry(path=str(folder / "missing.jpg")))
+    page = CropPage({"project": proj})
+    page.enter()                      # loads scan 0
+    assert page._row == 0
+    page._show_scan(1)                # unreadable -> must NOT switch _row
+    assert page._row == 0
+    # editing still targets scan 0, scan 1 stays empty
+    page.canvas.select_box(0)
+    page._delete_object()
+    assert proj.scans[0].wing_boxes == []
+    assert proj.scans[1].wing_boxes == []

@@ -44,6 +44,7 @@ class BoxEditorCanvas(QWidget):
         self._selected = -1
         self._drag = None
         self._drag_last: Optional[QPoint] = None
+        self._drag_start = None
         self._new_origin = None
         self._preview = None
         self._label_mode = False
@@ -188,6 +189,7 @@ class BoxEditorCanvas(QWidget):
         if idx is not None:
             self._drag = (idx, handle)
             self._drag_last = ip
+            self._drag_start = self._wing[idx]
             self.select_box(idx)
         else:
             self._new_origin = ip
@@ -218,9 +220,9 @@ class BoxEditorCanvas(QWidget):
             if self._drawing_label:
                 if big:
                     self._label = box
-                    self.boxesChanged.emit()
                 self._drawing_label = False
                 self._label_mode = False
+                self.boxesChanged.emit()
             elif big:
                 self._wing.append(box)
                 self.select_box(len(self._wing) - 1)
@@ -231,9 +233,12 @@ class BoxEditorCanvas(QWidget):
         elif self._drag is not None:
             idx, _ = self._drag
             self._wing[idx] = normalize_box(self._wing[idx])
+            changed = self._wing[idx] != self._drag_start
             self._drag = None
             self._drag_last = None
-            self.boxesChanged.emit()
+            self._drag_start = None
+            if changed:
+                self.boxesChanged.emit()
 
     def wheelEvent(self, ev) -> None:
         if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:

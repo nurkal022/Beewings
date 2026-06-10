@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 Box = Tuple[int, int, int, int]
-Handle = Optional[str]  # None | 'move' | 'nw' | 'ne' | 'sw' | 'se'
+Handle = Optional[str]  # None|'move'|'nw'|'ne'|'sw'|'se'|'n'|'s'|'e'|'w'
 
 
 def normalize_box(box: Box) -> Box:
