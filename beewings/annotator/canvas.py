@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Optional
 
 import numpy as np
+from PyQt6 import sip
 from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
@@ -114,7 +115,12 @@ class WingCanvas(QGraphicsView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._scene = QGraphicsScene(self)
+        # Parentless, Python-owned scene: its lifetime is tied to this canvas's
+        # Python object, not to the view's Qt parent chain. Parenting it to the
+        # view (QGraphicsScene(self)) let Qt delete the scene during embedded
+        # window/tab teardown while a usable Python reference survived, which
+        # then crashed on the next scene access (deleted-QGraphicsScene abort).
+        self._scene = QGraphicsScene()
         self.setScene(self._scene)
         self.setRenderHints(QPainter.RenderHint.SmoothPixmapTransform | QPainter.RenderHint.Antialiasing)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -170,10 +176,18 @@ class WingCanvas(QGraphicsView):
         self._current_id = lm_id
         self._restyle_items()
 
+    def _scene_alive(self) -> bool:
+        """Defense-in-depth: never touch a scene whose C++ object is gone."""
+        return self._scene is not None and not sip.isdeleted(self._scene)
+
     def refresh_landmarks(self) -> None:
+        if not self._scene_alive():
+            return
         self._rebuild_landmark_items()
 
     def set_template(self, template_landmarks: list) -> None:
+        if not self._scene_alive():
+            return
         for it in self._template_items:
             self._scene.removeItem(it)
         self._template_items.clear()
@@ -193,6 +207,8 @@ class WingCanvas(QGraphicsView):
             self._template_items.append(it)
 
     def clear_template(self) -> None:
+        if not self._scene_alive():
+            return
         for it in self._template_items:
             self._scene.removeItem(it)
         self._template_items.clear()
@@ -263,7 +279,7 @@ class WingCanvas(QGraphicsView):
     # ---- internal -----------------------------------------------------------
 
     def _refresh_pixmap(self) -> None:
-        if self._raw_image is None:
+        if self._raw_image is None or not self._scene_alive():
             return
         shown = apply_enh(self._raw_image, self._enhance)
         qimg = ndarray_to_qimage(shown)
@@ -275,6 +291,8 @@ class WingCanvas(QGraphicsView):
             self._pixmap_item.setPixmap(pm)
 
     def _rebuild_landmark_items(self) -> None:
+        if not self._scene_alive():
+            return
         for it in self._landmark_items.values():
             self._scene.removeItem(it)
         self._landmark_items.clear()
