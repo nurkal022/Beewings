@@ -40,3 +40,13 @@ def test_pages_construct(qapp, tmp_path):
     for Page in (SelectPage, CropPage, LandmarkPage, ExportPage):
         w = Page(ctx)
         assert w is not None
+
+
+def test_wizard_constructs_and_steps(qapp, tmp_path):
+    from beewings.pipeline.wizard import PipelineWizard
+    w = PipelineWizard(project_root=tmp_path / "proj")
+    assert w.stack.count() == 4
+    assert w.stack.currentIndex() == 0
+    # Cannot advance from stage 1 with no scans selected.
+    w._next()
+    assert w.stack.currentIndex() == 0
