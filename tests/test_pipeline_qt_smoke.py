@@ -27,3 +27,16 @@ def test_crop_worker_runs(qapp, scan_file, tmp_path):
     assert proj.scans[0].cropped is True
     assert len(proj.scans[0].wing_boxes) == meta["n_wings"]
     assert seen[-1][0] == seen[-1][1] == 1
+
+
+def test_pages_construct(qapp, tmp_path):
+    from beewings.pipeline.project import CropProject
+    from beewings.pipeline.pages.select_page import SelectPage
+    from beewings.pipeline.pages.crop_page import CropPage
+    from beewings.pipeline.pages.landmark_page import LandmarkPage
+    from beewings.pipeline.pages.export_page import ExportPage
+    proj = CropProject.create(tmp_path / "proj", scans_root="/s", scan_paths=[])
+    ctx = {"project": proj}
+    for Page in (SelectPage, CropPage, LandmarkPage, ExportPage):
+        w = Page(ctx)
+        assert w is not None
