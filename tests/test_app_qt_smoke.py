@@ -50,3 +50,21 @@ def test_project_window_has_three_tabs(qapp, tmp_path):
     assert w.tabs.tabText(0) == "Нарезка"
     assert w.tabs.tabText(1) == "Точки"
     assert w.tabs.tabText(2) == "Экспорт"
+
+
+def test_crop_page_objects_panel(qapp, tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject
+    from beewings.pipeline.pages.crop_page import CropPage
+    folder = tmp_path / "proj"; folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((200, 300, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    proj.scans[0].wing_boxes = [(10, 10, 40, 30), (80, 10, 40, 30), (150, 10, 40, 30)]
+    proj.scans[0].label_box = None
+    page = CropPage({"project": proj})
+    page.enter()
+    assert page.objects.count() == 3
+    page.objects.setCurrentRow(1)
+    assert page.canvas.selected() == 1
+    page._delete_object()
+    assert page.objects.count() == 2

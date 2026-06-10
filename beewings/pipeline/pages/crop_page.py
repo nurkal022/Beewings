@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import cv2
-from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QProgressBar,
-                             QPushButton, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QMessageBox,
+                             QProgressBar, QPushButton, QVBoxLayout, QWidget)
 
 from ..box_canvas import BoxEditorCanvas
 from ..project import CropProject
@@ -17,8 +17,11 @@ class CropPage(QWidget):
         super().__init__(parent)
         self.ctx = ctx
         self._worker = None
+        self._syncing = False
         root = QHBoxLayout(self)
+
         left = QVBoxLayout()
+        left.addWidget(QLabel("Сплиты:"))
         self.scan_list = QListWidget()
         self.scan_list.currentRowChanged.connect(self._show_scan)
         left.addWidget(self.scan_list)
@@ -35,8 +38,28 @@ class CropPage(QWidget):
         self.progress = QProgressBar()
         left.addWidget(self.progress)
         root.addLayout(left, 0)
+
+        mid = QVBoxLayout()
+        mid.addWidget(QLabel("Найденные крылья:"))
+        self.objects = QListWidget()
+        self.objects.currentRowChanged.connect(self._on_object_selected)
+        mid.addWidget(self.objects)
+        self.del_obj_btn = QPushButton("Удалить крыло")
+        self.del_obj_btn.clicked.connect(self._delete_object)
+        mid.addWidget(self.del_obj_btn)
+        self.label_status = QLabel("Этикетка: —")
+        mid.addWidget(self.label_status)
+        self.add_label_btn = QPushButton("Добавить этикетку")
+        self.add_label_btn.clicked.connect(self._add_label)
+        mid.addWidget(self.add_label_btn)
+        self.del_label_btn = QPushButton("Удалить этикетку")
+        self.del_label_btn.clicked.connect(self._remove_label)
+        mid.addWidget(self.del_label_btn)
+        root.addLayout(mid, 0)
+
         self.canvas = BoxEditorCanvas()
-        self.canvas.boxesChanged.connect(self._sync_boxes)
+        self.canvas.boxesChanged.connect(self._on_boxes_changed)
+        self.canvas.selectionChanged.connect(self._on_canvas_selection)
         root.addWidget(self.canvas, 1)
 
     def enter(self) -> None:
@@ -55,6 +78,48 @@ class CropPage(QWidget):
         img = cv2.imread(entry.path)
         if img is not None:
             self.canvas.set_scan(img, entry.wing_boxes, entry.label_box)
+        self._refresh_objects()
+
+    def _refresh_objects(self) -> None:
+        self._syncing = True
+        self.objects.clear()
+        self.objects.addItems([f"Крыло {i + 1}" for i in range(len(self.canvas.wing_boxes()))])
+        sel = self.canvas.selected()
+        if 0 <= sel < self.objects.count():
+            self.objects.setCurrentRow(sel)
+        self._syncing = False
+        has_label = self.canvas.label_box() is not None
+        self.label_status.setText("Этикетка: есть" if has_label else "Этикетка: не найдена")
+        self.add_label_btn.setVisible(not has_label)
+        self.del_label_btn.setVisible(has_label)
+
+    def _on_object_selected(self, row: int) -> None:
+        if self._syncing:
+            return
+        self.canvas.select_box(row)
+
+    def _on_canvas_selection(self, idx: int) -> None:
+        if self._syncing:
+            return
+        self._syncing = True
+        self.objects.setCurrentRow(idx)
+        self._syncing = False
+
+    def _delete_object(self) -> None:
+        idx = self.objects.currentRow()
+        if idx >= 0:
+            self.canvas.delete_box(idx)
+
+    def _add_label(self) -> None:
+        self.canvas.begin_label_draw()
+        self.label_status.setText("Этикетка: нарисуйте рамку на скане…")
+
+    def _remove_label(self) -> None:
+        self.canvas.clear_label()
+
+    def _on_boxes_changed(self) -> None:
+        self._sync_boxes()
+        self._refresh_objects()
 
     def _sync_boxes(self) -> None:
         proj: CropProject = self.ctx["project"]
