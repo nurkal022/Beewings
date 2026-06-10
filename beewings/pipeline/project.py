@@ -91,6 +91,37 @@ class CropProject:
     def crops_dir(self, entry: ScanEntry) -> Path:
         return self.root / "crops" / Path(entry.path).stem
 
+    IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp")
+
+    @classmethod
+    def open_folder(cls, folder: Path) -> "CropProject":
+        """Load <folder>/project.json if present, else create from top-level images."""
+        folder = Path(folder)
+        if (folder / "project.json").exists():
+            return cls.load(folder)
+        skip = ("_crop_", "_label", "_debug")
+        scans = sorted(
+            p for p in folder.glob("*")
+            if p.suffix.lower() in cls.IMAGE_EXTS and not any(t in p.stem for t in skip)
+        )
+        proj = cls.create(folder, scans_root=str(folder), scan_paths=scans)
+        proj.save()
+        return proj
+
+    def progress(self) -> dict:
+        """Summary counts for the Home cards."""
+        n_landmarked = 0
+        for entry in self.scans:
+            cdir = self.crops_dir(entry)
+            ann = cdir / "annotations"
+            if entry.cropped and ann.exists() and any(ann.rglob("*.json")):
+                n_landmarked += 1
+        return {
+            "n_splits": len(self.scans),
+            "n_cropped": sum(1 for e in self.scans if e.cropped),
+            "n_landmarked": n_landmarked,
+        }
+
 
 import cv2
 

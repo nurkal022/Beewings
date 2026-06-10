@@ -73,3 +73,42 @@ def test_recrop_respects_manual_boxes(scan_file, tmp_path):
     proj.settings.rotate = False
     n = recrop(proj, proj.scans[0])
     assert n == 2
+
+
+def test_open_folder_creates_from_images(tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject
+    folder = tmp_path / "Клат"
+    folder.mkdir()
+    for n in ("a.jpg", "b.jpg"):
+        cv2.imwrite(str(folder / n), np.full((10, 10, 3), 255, np.uint8))
+    (folder / "notes.txt").write_text("x")
+    proj = CropProject.open_folder(folder)
+    assert sorted(Path(s.path).name for s in proj.scans) == ["a.jpg", "b.jpg"]
+    assert (folder / "project.json").exists()
+
+
+def test_open_folder_loads_existing(tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject
+    folder = tmp_path / "Клат"
+    folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((10, 10, 3), 255, np.uint8))
+    p1 = CropProject.open_folder(folder)
+    p1.settings.delta = 99
+    p1.save()
+    p2 = CropProject.open_folder(folder)
+    assert p2.settings.delta == 99
+
+
+def test_progress_counts(tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject
+    folder = tmp_path / "p"
+    folder.mkdir()
+    for n in ("a.jpg", "b.jpg"):
+        cv2.imwrite(str(folder / n), np.full((10, 10, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    proj.scans[0].cropped = True
+    prog = proj.progress()
+    assert prog == {"n_splits": 2, "n_cropped": 1, "n_landmarked": 0}
