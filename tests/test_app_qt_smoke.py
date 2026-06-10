@@ -35,3 +35,18 @@ def test_home_lists_recents(qapp):
     assert h.cards_count() == 1
     h._emit_open("/a/Клат")
     assert opened == ["/a/Клат"]
+
+
+def test_project_window_has_three_tabs(qapp, tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject
+    from beewings.app.project_window import ProjectWindow
+    folder = tmp_path / "proj"
+    folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((20, 20, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    w = ProjectWindow(proj, on_home=lambda: None)
+    assert w.tabs.count() == 3
+    assert w.tabs.tabText(0) == "Нарезка"
+    assert w.tabs.tabText(1) == "Точки"
+    assert w.tabs.tabText(2) == "Экспорт"
