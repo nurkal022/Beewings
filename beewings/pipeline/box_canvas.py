@@ -229,10 +229,12 @@ class BoxEditorCanvas(QWidget):
         if self._drag is not None and self._drag_last is not None:
             kind, idx, handle = self._drag
             dx, dy = ip.x() - self._drag_last.x(), ip.y() - self._drag_last.y()
-            if kind == "wing":
+            if kind == "wing" and idx < len(self._wing):
                 self._wing[idx] = resize_box(self._wing[idx], handle, dx, dy)
-            else:
+            elif kind == "label" and self._label is not None:
                 self._label = resize_box(self._label, handle, dx, dy)
+            else:
+                self._drag = None
             self._drag_last = ip
             self.update()
         elif self._new_origin is not None:
@@ -266,10 +268,11 @@ class BoxEditorCanvas(QWidget):
             self.update()
         elif self._drag is not None:
             kind, idx, _ = self._drag
-            if kind == "wing":
+            changed = False
+            if kind == "wing" and idx < len(self._wing):
                 self._wing[idx] = normalize_box(self._wing[idx])
                 changed = self._wing[idx] != self._drag_start
-            else:
+            elif kind == "label" and self._label is not None:
                 self._label = normalize_box(self._label)
                 changed = self._label != self._drag_start
             self._drag = None

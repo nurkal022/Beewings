@@ -72,3 +72,27 @@ def test_box_canvas_label_editing(qapp):
     c.clear_label()
     assert c.label_box() is None
     assert c.label_selected() is False
+
+
+def test_box_canvas_delete_during_label_drag_no_crash(qapp):
+    import numpy as np
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+    from beewings.pipeline.box_canvas import BoxEditorCanvas
+    c = BoxEditorCanvas()
+    c.set_scan(np.full((200, 400, 3), 255, np.uint8), wing_boxes=[], label_box=(0, 0, 40, 40))
+    c.select_label()
+    # simulate an active label drag, then delete the label mid-drag
+    c._drag = ("label", 0, "se")
+    c._drag_last = c._to_img(QPointF(20, 20))
+    c._drag_start = c.label_box()
+    c.clear_label()
+    mv = QMouseEvent(QEvent.Type.MouseMove, QPointF(60, 60),
+                     Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.NoModifier)
+    c.mouseMoveEvent(mv)        # must not raise
+    rel = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(60, 60),
+                      Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+                      Qt.KeyboardModifier.NoModifier)
+    c.mouseReleaseEvent(rel)    # must not raise
+    assert c.label_box() is None

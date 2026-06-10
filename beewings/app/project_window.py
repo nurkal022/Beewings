@@ -76,6 +76,7 @@ class LandmarkTab(QWidget):
         if not crops:
             child = QTreeWidgetItem(parent, ["(не нарезано)"])
             child.setDisabled(True)
+            child.setData(0, _ROLE, ("empty",))
             return
         prof = get_profile(proj.settings.profile)
         for cp in crops:
