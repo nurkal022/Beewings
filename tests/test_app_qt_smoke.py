@@ -201,3 +201,22 @@ def test_side_panel_is_scrollable(qapp):
     sp.set_methodology("alpatov", "Алпатов 12 точек")
     sp.set_methodology("tofilski", "Тофильский 19 точек")
     assert sp.list is not None
+
+
+def test_export_page_layout_and_run(qapp, tmp_path):
+    import cv2, numpy as np
+    from PyQt6.QtWidgets import QFrame
+    from beewings.pipeline.project import CropProject, auto_detect, recrop
+    from beewings.pipeline.pages.export_page import ExportPage
+    folder = tmp_path / "proj"; folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((200, 300, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    auto_detect(proj.scans[0], proj.settings); recrop(proj, proj.scans[0]); proj.save()
+    page = ExportPage({"project": proj})
+    page.enter()
+    assert page.findChild(QFrame, "card") is not None      # card layout
+    assert all(cb.isChecked() for cb in page.checks.values())  # all on by default
+    assert "Папка проекта" in page.info.text()
+    page._export()
+    assert not page.result.isHidden() and "Готово" in page.result.text()
+    assert (proj.root / "export").exists()
