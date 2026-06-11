@@ -36,8 +36,14 @@ class AppController:
                            proj.progress(), datetime.now().isoformat(timespec="seconds"))
         save_recents(items, self.store)
         self.home_win.hide()
+        old = self.project_win
         self.project_win = ProjectWindow(proj, on_home=self._back_home)
         self.project_win.show()
+        if old is not None:
+            # Destroy the previous project window so its (now stale) pages/widgets
+            # can't be reached by lingering signal connections.
+            old.close()
+            old.deleteLater()
 
     def _back_home(self) -> None:
         if self.project_win is not None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QCheckBox, QFrame, QGridLayout, QGroupBox,
                              QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
@@ -93,6 +94,8 @@ class ExportPage(QWidget):
         self.cb_report = self.checks["report"]
 
     def enter(self) -> None:
+        if sip.isdeleted(self):
+            return
         proj: CropProject = self.ctx["project"]
         prog = proj.progress()
         self.info.setText(
@@ -102,6 +105,8 @@ class ExportPage(QWidget):
         self.result.setVisible(False)
 
     def _export(self) -> None:
+        if sip.isdeleted(self):
+            return
         proj: CropProject = self.ctx["project"]
         include = {key for key, cb in self.checks.items() if cb.isChecked()}
         if not include:

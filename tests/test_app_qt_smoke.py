@@ -220,3 +220,17 @@ def test_export_page_layout_and_run(qapp, tmp_path):
     page._export()
     assert not page.result.isHidden() and "Готово" in page.result.text()
     assert (proj.root / "export").exists()
+
+
+def test_export_page_slots_noop_after_delete(qapp, tmp_path):
+    import cv2, numpy as np
+    from PyQt6 import sip
+    from beewings.pipeline.project import CropProject
+    from beewings.pipeline.pages.export_page import ExportPage
+    folder = tmp_path / "proj"; folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((30, 30, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    page = ExportPage({"project": proj})
+    sip.delete(page)            # simulate Qt teardown of the tab/window
+    page.enter()                # must not raise
+    page._export()              # must not raise (was the reported SIGABRT)
