@@ -110,15 +110,21 @@ class ExportPage(QWidget):
         proj: CropProject = self.ctx["project"]
         include = {key for key, cb in self.checks.items() if cb.isChecked()}
         if not include:
-            self.result.setStyleSheet("color: #c0392b; font-weight: bold;")
-            self.result.setText("Выберите хотя бы один формат для экспорта.")
-            self.result.setVisible(True)
+            self._show_result("Выберите хотя бы один формат для экспорта.", ok=False)
             return
         stats = export_protocol(proj, proj.root / "export", include)
-        self.result.setStyleSheet("color: #1a8a3a; font-weight: bold;")
-        self.result.setText(
+        self._show_result(
             f"✓ Готово: {stats['n_wings']} крыльев из {stats['n_scans']} "
-            f"сканов → {proj.root / 'export'}")
+            f"сканов → {proj.root / 'export'}", ok=True)
+
+    def _show_result(self, text: str, ok: bool) -> None:
+        # The slot may outlive its widgets (e.g. project window reopened); touching
+        # a deleted QLabel raises RuntimeError on Windows / aborts on macOS.
+        if sip.isdeleted(self) or sip.isdeleted(self.result):
+            return
+        color = "#1a8a3a" if ok else "#c0392b"
+        self.result.setStyleSheet(f"color: {color}; font-weight: bold;")
+        self.result.setText(text)
         self.result.setVisible(True)
 
     def commit(self) -> bool:
