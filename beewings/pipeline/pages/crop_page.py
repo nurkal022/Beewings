@@ -79,10 +79,12 @@ class CropPage(QWidget):
 
     def enter(self) -> None:
         proj: CropProject = self.ctx["project"]
+        proj.sync_new_scans()  # pick up images dropped into the folder
+        row = self.scan_list.currentRow()
         self.scan_list.clear()
         self.scan_list.addItems([Path(s.path).name for s in proj.scans])
         if proj.scans:
-            self.scan_list.setCurrentRow(0)
+            self.scan_list.setCurrentRow(row if 0 <= row < len(proj.scans) else 0)
 
     def _show_scan(self, row: int) -> None:
         proj: CropProject = self.ctx["project"]

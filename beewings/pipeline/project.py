@@ -113,21 +113,54 @@ class CropProject:
         return self.root / "crops" / Path(entry.path).stem
 
     IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp")
+    _SKIP = ("_crop_", "_label", "_debug")
+
+    @classmethod
+    def _scan_files(cls, folder: Path) -> List[Path]:
+        folder = Path(folder)
+        return sorted(
+            p for p in folder.glob("*")
+            if p.suffix.lower() in cls.IMAGE_EXTS and not any(t in p.stem for t in cls._SKIP)
+        )
 
     @classmethod
     def open_folder(cls, folder: Path) -> "CropProject":
         """Load <folder>/project.json if present, else create from top-level images."""
         folder = Path(folder)
         if (folder / "project.json").exists():
-            return cls.load(folder)
-        skip = ("_crop_", "_label", "_debug")
-        scans = sorted(
-            p for p in folder.glob("*")
-            if p.suffix.lower() in cls.IMAGE_EXTS and not any(t in p.stem for t in skip)
-        )
-        proj = cls.create(folder, scans_root=str(folder), scan_paths=scans)
+            proj = cls.load(folder)
+            proj.sync_new_scans()  # pick up images added since the project was made
+            return proj
+        proj = cls.create(folder, scans_root=str(folder),
+                          scan_paths=cls._scan_files(folder))
         proj.save()
         return proj
+
+    def sync_new_scans(self) -> int:
+        """Append image files present in the project folder but not yet tracked.
+
+        Lets users drop new scans into the folder and have them appear without
+        rebuilding the project. Existing entries (and their boxes/annotations)
+        are never touched or reordered. Returns the number of scans added.
+        """
+        have = {Path(s.path).name for s in self.scans}
+        dirs, seen = [], set()
+        for d in (self.root, Path(self.scans_root)):
+            d = Path(d)
+            if d not in seen and d.exists():
+                dirs.append(d)
+                seen.add(d)
+        added = 0
+        for d in dirs:
+            for p in self._scan_files(d):
+                if p.name in have:
+                    continue
+                self.scans.append(ScanEntry(path=str(p)))
+                have.add(p.name)
+                added += 1
+        if added:
+            self.save()
+        return added
 
     def progress(self) -> dict:
         """Summary counts for the Home cards. A scan counts as landmarked only
