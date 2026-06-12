@@ -80,13 +80,34 @@ class CropProject:
             )
             for s in data.get("scans", [])
         ]
-        return cls(
+        proj = cls(
             root=root,
             scans_root=data["scans_root"],
             settings=Settings(**data.get("settings", {})),
             stage=data.get("stage", "select"),
             scans=scans,
         )
+        proj._heal_paths()
+        return proj
+
+    def _heal_paths(self) -> None:
+        """Re-anchor scan image paths to this project folder.
+
+        project.json stores absolute paths, so a project created on one machine
+        breaks when copied to another (e.g. macOS -> Windows). When a stored
+        path no longer exists, fall back to the same filename inside the project
+        folder (or scans_root), which is where open_folder() found it.
+        """
+        search_dirs = [self.root, Path(self.scans_root)]
+        for s in self.scans:
+            if os.path.exists(s.path):
+                continue
+            name = Path(s.path).name
+            for d in search_dirs:
+                candidate = d / name
+                if candidate.exists():
+                    s.path = str(candidate)
+                    break
 
     def crops_dir(self, entry: ScanEntry) -> Path:
         return self.root / "crops" / Path(entry.path).stem
