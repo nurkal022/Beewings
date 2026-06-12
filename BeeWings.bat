@@ -47,7 +47,8 @@ powershell -NoProfile -Command ^
   "$lnk.TargetPath = (Resolve-Path '.venv\Scripts\pythonw.exe').Path;" ^
   "$lnk.Arguments = '-c \"from beewings.app.app import main; main()\"';" ^
   "$lnk.WorkingDirectory = (Get-Location).Path;" ^
-  "$lnk.IconLocation = (Resolve-Path '.venv\Scripts\pythonw.exe').Path + ',0';" ^
+  "$ico = Join-Path (Get-Location).Path 'assets\beewings.ico';" ^
+  "$lnk.IconLocation = $(if (Test-Path $ico) { $ico } else { (Resolve-Path '.venv\Scripts\pythonw.exe').Path + ',0' });" ^
   "$lnk.Save()" 2>nul
 
 echo.
