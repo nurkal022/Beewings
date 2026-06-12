@@ -196,4 +196,7 @@ def get_profile(name: str) -> Profile:
     legacy = {"8-point": "Алпатов 8 точек",
               "12-point": "Алпатов 12 точек",
               "19-point": "Тофильский 19 точек"}
-    return PROFILES[legacy.get(name, name)]
+    key = legacy.get(name, name)
+    # An unknown / renamed profile (e.g. from an old or hand-edited project)
+    # must not crash with KeyError — fall back to the default profile.
+    return PROFILES.get(key) or PROFILES[DEFAULT_PROFILE]

@@ -319,7 +319,10 @@ class WingCanvas(QGraphicsView):
             lm = self._ann.get_landmark(lm_id)
             if lm is None:
                 continue
-            spec = self._profile.get(lm_id)
+            try:
+                spec = self._profile.get(lm_id)
+            except KeyError:
+                continue  # landmark id not in the current profile
             item.update_style(QColor(spec.color), lm_id == self._current_id, lm.uncertain, lm.skipped)
 
     # ---- events -------------------------------------------------------------

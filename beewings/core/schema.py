@@ -138,7 +138,12 @@ def migrate_legacy_annotations(project_dir: Path) -> Dict[str, int]:
 def load_annotation(path: Path) -> Optional[WingAnnotation]:
     if not path.exists():
         return None
-    return WingAnnotation.model_validate_json(path.read_text(encoding="utf-8"))
+    try:
+        return WingAnnotation.model_validate_json(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        # Corrupt / partially-written / hand-edited JSON: treat as "no annotation"
+        # rather than crashing the list rendering or the annotator.
+        return None
 
 
 def save_annotation(ann: WingAnnotation, path: Path) -> None:

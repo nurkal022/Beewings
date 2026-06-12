@@ -66,24 +66,46 @@ class CropProject:
     @classmethod
     def load(cls, root: Path) -> "CropProject":
         root = Path(root)
-        data = json.loads((root / "project.json").read_text(encoding="utf-8"))
+        try:
+            data = json.loads((root / "project.json").read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("project.json is not an object")
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            raise ValueError(f"Файл проекта повреждён ({root / 'project.json'}): {exc}") from None
 
         def _box(v):
-            return tuple(int(i) for i in v) if v else None
+            try:
+                return tuple(int(i) for i in v) if v else None
+            except (TypeError, ValueError):
+                return None
+
+        def _boxes(v):
+            out = []
+            for b in (v or []):
+                try:
+                    out.append(tuple(int(i) for i in b))
+                except (TypeError, ValueError):
+                    continue
+            return out
 
         scans = [
             ScanEntry(
                 path=s["path"],
                 label_box=_box(s.get("label_box")),
-                wing_boxes=[tuple(int(i) for i in b) for b in s.get("wing_boxes", [])],
+                wing_boxes=_boxes(s.get("wing_boxes")),
                 cropped=bool(s.get("cropped", False)),
             )
             for s in data.get("scans", [])
+            if isinstance(s, dict) and s.get("path")
         ]
+        try:
+            settings = Settings(**data.get("settings", {}))
+        except TypeError:
+            settings = Settings()  # unknown/renamed settings keys -> defaults
         proj = cls(
             root=root,
-            scans_root=data["scans_root"],
-            settings=Settings(**data.get("settings", {})),
+            scans_root=str(data.get("scans_root", root)),
+            settings=settings,
             stage=data.get("stage", "select"),
             scans=scans,
         )

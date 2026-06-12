@@ -24,20 +24,26 @@ class CropWorker(QThread):
         self.do_recrop = do_recrop
 
     def run(self) -> None:
-        total = len(self.project.scans)
-        for i, entry in enumerate(self.project.scans, start=1):
-            if self.isInterruptionRequested():
-                break
+        try:
+            total = len(self.project.scans)
+            for i, entry in enumerate(self.project.scans, start=1):
+                if self.isInterruptionRequested():
+                    break
+                try:
+                    if self.do_autodetect:
+                        auto_detect(entry, self.project.settings)
+                    if self.do_recrop:
+                        recrop(self.project, entry)
+                except Exception as exc:  # keep going on the rest
+                    self.failed.emit(entry.path, f"{type(exc).__name__}: {exc}")
+                self.progress.emit(i, total, Path(entry.path).name)
             try:
-                if self.do_autodetect:
-                    auto_detect(entry, self.project.settings)
-                if self.do_recrop:
-                    recrop(self.project, entry)
-            except Exception as exc:  # keep going on the rest
-                self.failed.emit(entry.path, f"{type(exc).__name__}: {exc}")
-            self.progress.emit(i, total, Path(entry.path).name)
-        self.project.save()
-        self.finished_ok.emit()
+                self.project.save()
+            except Exception as exc:
+                self.failed.emit("", f"Не удалось сохранить проект: {exc}")
+        finally:
+            # Always signal completion so the UI never gets stuck "running".
+            self.finished_ok.emit()
 
 
 class LandmarkWorker(QThread):
@@ -52,24 +58,26 @@ class LandmarkWorker(QThread):
         self.project = project
 
     def run(self) -> None:
-        cropped = [e for e in self.project.scans if e.cropped]
-        for entry in cropped:
-            if self.isInterruptionRequested():
-                break
-            cdir = self.project.crops_dir(entry)
-            try:
-                run_landmarks(
-                    cdir,
-                    profile_name=self.project.settings.profile,
-                    checkpoint=Path(self.project.settings.checkpoint),
-                    # CPU: this is a background QThread; GPU (MPS/Metal) here
-                    # contends with the main thread's canvas rendering and
-                    # crashes natively on macOS.
-                    device="cpu",
-                    progress_cb=lambda i, t, name, e=entry: self.progress.emit(
-                        i, t, f"{Path(e.path).stem}: {name}"),
-                    should_cancel=self.isInterruptionRequested,
-                )
-            except Exception as exc:
-                self.failed.emit(entry.path, f"{type(exc).__name__}: {exc}")
-        self.finished_ok.emit()
+        try:
+            cropped = [e for e in self.project.scans if e.cropped]
+            for entry in cropped:
+                if self.isInterruptionRequested():
+                    break
+                cdir = self.project.crops_dir(entry)
+                try:
+                    run_landmarks(
+                        cdir,
+                        profile_name=self.project.settings.profile,
+                        checkpoint=Path(self.project.settings.checkpoint),
+                        # CPU: this is a background QThread; GPU (MPS/Metal) here
+                        # contends with the main thread's canvas rendering and
+                        # crashes natively on macOS.
+                        device="cpu",
+                        progress_cb=lambda i, t, name, e=entry: self.progress.emit(
+                            i, t, f"{Path(e.path).stem}: {name}"),
+                        should_cancel=self.isInterruptionRequested,
+                    )
+                except Exception as exc:
+                    self.failed.emit(entry.path, f"{type(exc).__name__}: {exc}")
+        finally:
+            self.finished_ok.emit()

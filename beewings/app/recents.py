@@ -18,16 +18,22 @@ def load_recents(store: Path) -> List[Dict]:
         return []
     try:
         data = json.loads(store.read_text(encoding="utf-8"))
-        return list(data.get("items", []))
+        if not isinstance(data, dict):
+            return []
+        return [i for i in data.get("items", []) if isinstance(i, dict)]
     except (json.JSONDecodeError, OSError):
         return []
 
 
 def save_recents(items: List[Dict], store: Path) -> None:
     store = Path(store)
-    store.parent.mkdir(parents=True, exist_ok=True)
-    store.write_text(json.dumps({"version": 1, "items": items},
-                                ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(json.dumps({"version": 1, "items": items},
+                                    ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        # A non-writable home / locked file must not break opening a project.
+        pass
 
 
 def add_recent(items: List[Dict], path: str, stats: Dict, opened_at: str) -> List[Dict]:

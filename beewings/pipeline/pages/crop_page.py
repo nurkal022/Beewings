@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QMessageBox,
                              QProgressBar, QPushButton, QVBoxLayout, QWidget)
@@ -184,11 +185,21 @@ class CropPage(QWidget):
         self.progress.setRange(0, len(proj.scans))
         self._set_running(True)
         self._worker = CropWorker(proj, do_autodetect, do_recrop)
-        self._worker.progress.connect(lambda i, t, n: self.progress.setValue(i))
+        self._worker.progress.connect(
+            lambda i, t, n: None if sip.isdeleted(self) else self.progress.setValue(i))
         self._worker.failed.connect(
-            lambda path, err: QMessageBox.warning(self, "Ошибка нарезки", f"{path}\n{err}"))
-        self._worker.finished_ok.connect(lambda: self._on_done(refresh))
+            lambda path, err: None if sip.isdeleted(self)
+            else QMessageBox.warning(self, "Ошибка нарезки", f"{path}\n{err}"))
+        self._worker.finished_ok.connect(
+            lambda: None if sip.isdeleted(self) else self._on_done(refresh))
         self._worker.start()
+
+    def stop_worker(self) -> None:
+        """Interrupt and wait for the crop worker before this page is destroyed."""
+        w = self._worker
+        if w is not None and not sip.isdeleted(w) and w.isRunning():
+            w.requestInterruption()
+            w.wait(5000)
 
     def _on_done(self, refresh: bool) -> None:
         self._set_running(False)

@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QHBoxLayout, QMainWindow, QMessageBox, QProgressBar,
                              QPushButton, QStatusBar, QTabWidget, QTreeWidget,
@@ -118,13 +119,29 @@ class LandmarkTab(QWidget):
         self.progress.setRange(0, 0)
         self.run_btn.setEnabled(False)
         self._worker = LandmarkWorker(proj)
-        self._worker.progress.connect(lambda i, t, name: self.progress.setFormat(name))
+        self._worker.progress.connect(
+            lambda i, t, name: None if sip.isdeleted(self) else self.progress.setFormat(name))
         self._worker.failed.connect(
-            lambda path, err: QMessageBox.warning(self, "Ошибка разметки", f"{path}\n{err}"))
+            lambda path, err: None if sip.isdeleted(self)
+            else QMessageBox.warning(self, "Ошибка разметки", f"{path}\n{err}"))
         self._worker.finished_ok.connect(self._done)
         self._worker.start()
 
+    def stop_worker(self) -> None:
+        """Interrupt and wait for background work so its signals can't reach a
+        widget that is about to be destroyed."""
+        w = self._worker
+        if w is not None and not sip.isdeleted(w) and w.isRunning():
+            w.requestInterruption()
+            w.wait(5000)
+        mw = getattr(self.annot, "_ml_worker", None)
+        if mw is not None and not sip.isdeleted(mw) and mw.isRunning():
+            mw.requestInterruption()
+            mw.wait(5000)
+
     def _done(self) -> None:
+        if sip.isdeleted(self):
+            return
         self.progress.setRange(0, 1)
         self.progress.setValue(1)
         self.run_btn.setEnabled(True)
@@ -136,6 +153,7 @@ class ProjectWindow(QMainWindow):
         super().__init__(parent)
         self.project = project
         self._on_home = on_home
+        self._disposing = False
         self.setWindowTitle(f"BeeWings — {Path(project.root).name}")
         self.resize(1500, 920)
         self.ctx = {"project": project}
@@ -169,7 +187,43 @@ class ProjectWindow(QMainWindow):
         if hasattr(w, "enter"):
             w.enter()
 
+    def _stop_workers(self) -> None:
+        for tab in (self.crop_tab, self.landmark_tab):
+            stop = getattr(tab, "stop_worker", None)
+            if stop is None:
+                continue
+            try:
+                stop()
+            except Exception:
+                pass
+
+    def dispose(self) -> None:
+        """Called by the controller when this window is being replaced: stop
+        threads first (so stale signals can't hit deleted widgets), then delete."""
+        self._disposing = True
+        self._stop_workers()
+        self.close()
+        self.deleteLater()
+
+    def _save_quietly(self) -> None:
+        try:
+            self.project.save()
+        except Exception:
+            pass
+
     def _go_home(self) -> None:
-        self.project.save()
+        self._disposing = True
+        self._stop_workers()
+        self._save_quietly()
         self._on_home()
         self.close()
+
+    def closeEvent(self, event) -> None:
+        # Closing via the window's X (not the "← Дом" button): tidy up the same
+        # way and fall back to the Home screen instead of leaving no window.
+        self._stop_workers()
+        self._save_quietly()
+        if not self._disposing:
+            self._disposing = True
+            self._on_home()
+        event.accept()

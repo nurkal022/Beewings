@@ -26,6 +26,9 @@ class MLDetectWorker(QThread):
 
     def run(self) -> None:
         try:
+            if self.bgr is None:
+                self.failed.emit("Не удалось прочитать изображение для разметки.")
+                return
             model = self.model
             if model is None:
                 # Schema check before committing to a full load.
