@@ -4,8 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Optional
 
-import cv2
-
+from ..core.cvio import imread
 from ..core.profiles import get_profile
 from ..core.schema import Landmark, WingAnnotation, annotation_path, save_annotation
 from ..ml.inference import load as ml_load, predict as ml_predict
@@ -35,7 +34,7 @@ def run_landmarks(crops_dir: Path, profile_name: str, checkpoint: Path,
     for i, img_path in enumerate(images, start=1):
         if should_cancel is not None and should_cancel():
             return i - 1
-        bgr = cv2.imread(str(img_path))
+        bgr = imread(img_path)
         if bgr is None:
             if progress_cb:
                 progress_cb(i, total, img_path.name)

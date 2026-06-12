@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import cv2
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QMessageBox,
                              QProgressBar, QPushButton, QVBoxLayout, QWidget)
@@ -20,6 +19,7 @@ class _ObjectList(QListWidget):
             return
         super().keyPressEvent(ev)
 
+from ...core.cvio import imread
 from ..box_canvas import BoxEditorCanvas
 from ..project import CropProject
 from ..workers import CropWorker
@@ -89,7 +89,7 @@ class CropPage(QWidget):
         if not (0 <= row < len(proj.scans)):
             return
         entry = proj.scans[row]
-        img = cv2.imread(entry.path)
+        img = imread(entry.path)
         if img is None:
             return  # unreadable: keep previous scan/_row intact, don't corrupt
         self._row = row
