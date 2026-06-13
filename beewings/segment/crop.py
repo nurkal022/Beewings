@@ -61,14 +61,15 @@ def crop_wing(
     M[1, 2] += nh / 2.0 - h / 2.0
     rotated = cv2.warpAffine(patch, M, (nw, nh), borderValue=(int(bg),) * 3)
 
-    # Ensure base (narrow end) is on the left: compare foreground height of the
-    # left vs right 20% columns; the narrower side is the base.
+    # Ensure the base (articulation) is on the left. The base concentrates the
+    # darkest content — the thick proximal veins and the articulation — while
+    # the distal tip is wide but faintly veined. So the centroid of the *dark*
+    # mass marks the base; if it falls on the right half, flip 180 to bring the
+    # base left. (Counting all foreground instead misfires: the wide light tip
+    # holds more thresholded pixels than the narrow dark base.)
     rg = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
-    rfg = (rg < (bg - 25)).astype(np.uint8)
-    col_h = rfg.sum(axis=0)
-    band = max(1, rfg.shape[1] // 5)
-    left_h = col_h[:band].mean()
-    right_h = col_h[-band:].mean()
-    if left_h > right_h:  # base currently on the right -> flip 180
-        rotated = cv2.rotate(rotated, cv2.ROTATE_180)
+    dark_x = np.where(rg < (bg - 70))[1]
+    if dark_x.size:
+        if dark_x.mean() > rg.shape[1] / 2.0:  # dark base on the right -> flip
+            rotated = cv2.rotate(rotated, cv2.ROTATE_180)
     return rotated

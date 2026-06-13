@@ -23,7 +23,6 @@ def test_annotator_slots_noop_after_delete(qapp, tmp_path):
     sip.delete(w)                      # simulate Qt deleting the widget tree
     # None of these must raise.
     w._run_ml_detect()
-    w._run_auto_detect()
     w._on_image_selected(tmp_path / "crops" / "w0.jpg")
     w._save_current()
     w._after_change(advance=False)

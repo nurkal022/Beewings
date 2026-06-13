@@ -45,6 +45,10 @@ class CropPage(QWidget):
         self.recrop_btn = QPushButton("Пересоздать кропы")
         self.recrop_btn.clicked.connect(self._recrop)
         left.addWidget(self.recrop_btn)
+        self.done_btn = QPushButton("Завершить нарезку · к точкам →")
+        self.done_btn.setObjectName("primary")
+        self.done_btn.clicked.connect(self._finish)
+        left.addWidget(self.done_btn)
         self.cancel_btn = QPushButton("Отмена")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self._cancel)
@@ -178,7 +182,20 @@ class CropPage(QWidget):
     def _recrop(self) -> None:
         self._run(do_autodetect=False, do_recrop=True, refresh=False)
 
-    def _run(self, do_autodetect: bool, do_recrop: bool, refresh: bool) -> None:
+    def _finish(self) -> None:
+        """Write all crops from the current boxes, then go to the Точки stage."""
+        proj: CropProject = self.ctx["project"]
+        if not any(s.wing_boxes for s in proj.scans):
+            QMessageBox.information(
+                self, "Нет крыльев",
+                "Сначала выполните авто-нарезку или разметьте рамки.")
+            return
+        proj.stage = "landmarks"
+        self._run(do_autodetect=False, do_recrop=True, refresh=False,
+                  then=lambda: self.ctx["goto_tab"](1))
+
+    def _run(self, do_autodetect: bool, do_recrop: bool, refresh: bool,
+             then=None) -> None:
         if self._worker is not None and self._worker.isRunning():
             return
         proj: CropProject = self.ctx["project"]
@@ -191,7 +208,7 @@ class CropPage(QWidget):
             lambda path, err: None if sip.isdeleted(self)
             else QMessageBox.warning(self, "Ошибка нарезки", f"{path}\n{err}"))
         self._worker.finished_ok.connect(
-            lambda: None if sip.isdeleted(self) else self._on_done(refresh))
+            lambda: None if sip.isdeleted(self) else self._on_done(refresh, then))
         self._worker.start()
 
     def stop_worker(self) -> None:
@@ -201,13 +218,15 @@ class CropPage(QWidget):
             w.requestInterruption()
             w.wait(5000)
 
-    def _on_done(self, refresh: bool) -> None:
+    def _on_done(self, refresh: bool, then=None) -> None:
         self._set_running(False)
         if refresh:
             self._show_scan(getattr(self, "_row", 0))
+        if then is not None:
+            then()
 
     def _set_running(self, running: bool) -> None:
-        for b in (self.auto_btn, self.recrop_btn):
+        for b in (self.auto_btn, self.recrop_btn, self.done_btn):
             b.setEnabled(not running)
         self.cancel_btn.setEnabled(running)
 

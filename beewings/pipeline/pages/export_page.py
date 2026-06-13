@@ -5,20 +5,11 @@ from pathlib import Path
 
 from PyQt6 import sip
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QCheckBox, QFrame, QGridLayout, QGroupBox,
-                             QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
-                             QWidget)
+from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton,
+                             QVBoxLayout, QWidget)
 
-from ..export import export_protocol
+from ..export import export_per_scan
 from ..project import CropProject
-
-# (option-key, title, short description)
-_OPTIONS = [
-    ("folders", "Структура папок", "крылья + файлы точек по сканам"),
-    ("summary", "Сводная таблица (CSV)", "координаты всех точек + индексы"),
-    ("tps", "TPS для морфометрии", "совместимо с IdentiFly / MorphoJ"),
-    ("report", "Сводный отчёт (JSON)", "сводка по партии и индексам"),
-]
 
 
 class ExportPage(QWidget):
@@ -47,21 +38,12 @@ class ExportPage(QWidget):
         self.info.setStyleSheet("color: #667;")
         cl.addWidget(self.info)
 
-        box = QGroupBox("Что включить")
-        grid = QGridLayout(box)
-        grid.setVerticalSpacing(8)
-        grid.setHorizontalSpacing(10)
-        self.checks: dict[str, QCheckBox] = {}
-        for r, (key, label, desc) in enumerate(_OPTIONS):
-            cb = QCheckBox(label)
-            cb.setChecked(True)
-            d = QLabel(desc)
-            d.setStyleSheet("color: #99a; font-size: 11px;")
-            grid.addWidget(cb, r, 0)
-            grid.addWidget(d, r, 1)
-            self.checks[key] = cb
-        grid.setColumnStretch(1, 1)
-        cl.addWidget(box)
+        contents = QLabel(
+            "На каждый скан создаётся папка рядом со сканами:\n"
+            "• сам скан  • crops/  • TPS  • Excel  • JSON (с метаданными)")
+        contents.setWordWrap(True)
+        contents.setStyleSheet("color: #99a; font-size: 12px;")
+        cl.addWidget(contents)
 
         self.dest = QLabel("")
         self.dest.setStyleSheet("color: #99a; font-size: 11px;")
@@ -87,12 +69,6 @@ class ExportPage(QWidget):
         root.addLayout(row)
         root.addStretch(1)
 
-        # convenient aliases for callers/tests
-        self.cb_folders = self.checks["folders"]
-        self.cb_summary = self.checks["summary"]
-        self.cb_tps = self.checks["tps"]
-        self.cb_report = self.checks["report"]
-
     def enter(self) -> None:
         if sip.isdeleted(self):
             return
@@ -101,21 +77,21 @@ class ExportPage(QWidget):
         self.info.setText(
             f"Папка проекта: {Path(proj.root).name}  ·  "
             f"крыльев с точками: {prog['n_landmarked']} из {prog['n_splits']} сканов")
-        self.dest.setText(f"Назначение:  {proj.root / 'export'}")
+        self.dest.setText(f"Назначение:  {proj.root}  (папка на каждый скан)")
         self.result.setVisible(False)
 
     def _export(self) -> None:
         if sip.isdeleted(self):
             return
         proj: CropProject = self.ctx["project"]
-        include = {key for key, cb in self.checks.items() if cb.isChecked()}
-        if not include:
-            self._show_result("Выберите хотя бы один формат для экспорта.", ok=False)
+        stats = export_per_scan(proj)
+        if stats["n_scans"] == 0:
+            self._show_result(
+                "Нет размеченных крыльев — сначала расставьте точки.", ok=False)
             return
-        stats = export_protocol(proj, proj.root / "export", include)
         self._show_result(
             f"✓ Готово: {stats['n_wings']} крыльев из {stats['n_scans']} "
-            f"сканов → {proj.root / 'export'}", ok=True)
+            f"сканов → папки в {proj.root}", ok=True)
 
     def _show_result(self, text: str, ok: bool) -> None:
         # The slot may outlive its widgets (e.g. project window reopened); touching

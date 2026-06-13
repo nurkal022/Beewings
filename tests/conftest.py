@@ -15,16 +15,13 @@ def synthetic_scan():
     h, w = 600, 1200
     img = np.full((h, w, 3), 255, np.uint8)
 
-    # Label block on the left: several dark strokes inside x in [20, 180].
+    # Label block on the left: compact handwriting-like marks inside x in
+    # [20, 180]. Each mark is far smaller than a wing, so the geometric filter
+    # rejects them the way it rejects real handwritten characters; collectively
+    # they still form a detectable left-anchored label block.
     label_box = (20, 40, 160, 300)  # x, y, w, h
-    rng_lines = [
-        ((30, 80), (170, 90)),
-        ((30, 140), (150, 150)),
-        ((40, 200), (175, 215)),
-        ((35, 300), (160, 320)),
-    ]
-    for (x1, y1), (x2, y2) in rng_lines:
-        cv2.line(img, (x1, y1), (x2, y2), (30, 30, 30), 6)
+    for ry in range(70, 341, 60):              # dense rows of writing
+        cv2.line(img, (28, ry), (170, ry), (30, 30, 30), 9)
 
     # Wing grid: 5 columns x 4 rows of ellipses, starting well right of the gap.
     centers = []
@@ -32,7 +29,11 @@ def synthetic_scan():
     for r in range(4):
         for c in range(5):
             cx, cy = x0 + c * dx, y0 + r * dy
-            cv2.ellipse(img, (cx, cy), (55, 28), 0, 0, 360, (120, 120, 120), -1)
+            # A wing is a faint translucent membrane crossed by thin dark veins,
+            # not a solid blob — so the ink-fraction filter keeps it.
+            cv2.ellipse(img, (cx, cy), (55, 28), 0, 0, 360, (185, 185, 185), -1)
+            cv2.line(img, (cx - 50, cy), (cx + 50, cy), (30, 30, 30), 2)
+            cv2.line(img, (cx, cy - 24), (cx, cy + 24), (30, 30, 30), 2)
             centers.append((cx, cy))
 
     meta = {

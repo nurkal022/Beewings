@@ -24,6 +24,11 @@ wings*/
 *.csv
 *.tps
 
+# Scratch / sample project folders
+demo_scans/
+beewings_project/
+test_project/
+
 # Scratch images at repo root
 image.png
 image copy.png

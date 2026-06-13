@@ -58,7 +58,6 @@ class SidePanel(QWidget):
     toggle_uncertain_requested = pyqtSignal(int)
     toggle_skipped_requested = pyqtSignal(int)
     zoom_to_landmark_requested = pyqtSignal(int)
-    auto_detect_requested = pyqtSignal()
     ml_detect_requested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -133,16 +132,6 @@ class SidePanel(QWidget):
         self.ml_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 6px; background: #2d4a8a; color: white; }")
         self.ml_btn.clicked.connect(self.ml_detect_requested.emit)
         layout.addWidget(self.ml_btn)
-
-        self.auto_btn = QPushButton("⚡  Классический детектор")
-        self.auto_btn.setToolTip(
-            "Классическая компьютерная зрение (skeletonize + mean shape). "
-            "Не требует обученной модели, работает на любом железе. "
-            "Точность хуже ML, но не нужны GPU/checkpoint."
-        )
-        self.auto_btn.setStyleSheet("QPushButton { padding: 6px; background: #2d5a3d; color: white; }")
-        self.auto_btn.clicked.connect(self.auto_detect_requested.emit)
-        layout.addWidget(self.auto_btn)
 
         # --- landmark list
         self.list = QListWidget()

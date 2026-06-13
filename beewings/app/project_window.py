@@ -10,14 +10,15 @@ from PyQt6.QtWidgets import (QHBoxLayout, QMainWindow, QMessageBox, QProgressBar
                              QPushButton, QStatusBar, QTabWidget, QTreeWidget,
                              QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from ..core.profiles import get_profile
+from ..core.profiles import (DEFAULT_PROFILE_PER_METHODOLOGY, METHODOLOGIES,
+                             get_profile)
 from ..core.schema import annotation_path, load_annotation
 
 from ..annotator.annotator_widget import AnnotatorWidget
 from ..pipeline.pages.crop_page import CropPage
 from ..pipeline.pages.export_page import ExportPage
 from ..pipeline.project import CropProject
-from ..pipeline.workers import LandmarkWorker
+from ..pipeline.workers import CropWorker, LandmarkWorker
 
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
@@ -37,8 +38,22 @@ class LandmarkTab(QWidget):
         super().__init__(parent)
         self.ctx = ctx
         self._worker = None
+        self._crop_worker = None
         root = QHBoxLayout(self)
         left = QVBoxLayout()
+
+        # Methodology selector: drives which methodology's points are shown,
+        # edited, and produced by ML. Both are stored separately on disk.
+        meth_row = QHBoxLayout()
+        self.meth_buttons: dict[str, QPushButton] = {}
+        for mid, m in METHODOLOGIES.items():
+            b = QPushButton(m.display_name)
+            b.setCheckable(True)
+            b.clicked.connect(lambda _c=False, x=mid: self._on_methodology(x))
+            meth_row.addWidget(b)
+            self.meth_buttons[mid] = b
+        left.addLayout(meth_row)
+
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         self.tree.itemExpanded.connect(self._populate)
@@ -54,7 +69,65 @@ class LandmarkTab(QWidget):
         self.annot.set_browser_visible(False)
         root.addWidget(self.annot, 1)
 
+    # ---- methodology -------------------------------------------------------
+
+    def _active_profile(self):
+        return get_profile(self.ctx["project"].settings.profile)
+
+    def _sync_meth_buttons(self) -> None:
+        active = self._active_profile().methodology_id
+        for mid, b in self.meth_buttons.items():
+            b.setChecked(mid == active)
+
+    def _on_methodology(self, mid: str) -> None:
+        proj: CropProject = self.ctx["project"]
+        prof = get_profile(DEFAULT_PROFILE_PER_METHODOLOGY[mid])
+        if prof.name == proj.settings.profile:
+            self._sync_meth_buttons()
+            return
+        proj.settings.profile = prof.name
+        proj.settings.checkpoint = f"checkpoints/{prof.checkpoint_name}"
+        proj.save()
+        self.annot.set_active_profile(prof.name)
+        self._sync_meth_buttons()
+        self._build_tree()
+
     def enter(self) -> None:
+        proj: CropProject = self.ctx["project"]
+        self._sync_meth_buttons()
+        self.annot.set_active_profile(self._active_profile().name)
+        # Crops are written to disk by recrop(), not by auto-detection. If the
+        # operator auto-detected (and edited) boxes but never pressed
+        # "Пересоздать кропы", the crops are missing and this stage would show
+        # "(не нарезано)". Write any missing crops first, then build the tree.
+        needs_crop = any(s.wing_boxes and not s.cropped for s in proj.scans)
+        if needs_crop and (self._crop_worker is None
+                           or not self._crop_worker.isRunning()):
+            self._recrop_then_build()
+        else:
+            self._build_tree()
+
+    def _recrop_then_build(self) -> None:
+        proj: CropProject = self.ctx["project"]
+        self.tree.clear()
+        self.progress.setRange(0, len(proj.scans))
+        self.run_btn.setEnabled(False)
+        self._crop_worker = CropWorker(proj, do_autodetect=False, do_recrop=True)
+        self._crop_worker.progress.connect(
+            lambda i, t, n: None if sip.isdeleted(self) else self.progress.setValue(i))
+        self._crop_worker.failed.connect(
+            lambda path, err: None if sip.isdeleted(self)
+            else QMessageBox.warning(self, "Ошибка нарезки", f"{path}\n{err}"))
+        self._crop_worker.finished_ok.connect(
+            lambda: None if sip.isdeleted(self) else self._on_recrop_done())
+        self._crop_worker.start()
+
+    def _on_recrop_done(self) -> None:
+        self.run_btn.setEnabled(True)
+        self.progress.reset()
+        self._build_tree()
+
+    def _build_tree(self) -> None:
         proj: CropProject = self.ctx["project"]
         self.tree.clear()
         for i, scan in enumerate(proj.scans):
@@ -79,18 +152,25 @@ class LandmarkTab(QWidget):
             child.setDisabled(True)
             child.setData(0, _ROLE, ("empty",))
             return
-        prof = get_profile(proj.settings.profile)
         for cp in crops:
-            child = QTreeWidgetItem(parent, [self._wing_label(cp, cdir, prof)])
+            child = QTreeWidgetItem(parent, [self._wing_label(cp, cdir)])
             child.setData(0, _ROLE, ("wing", idx, str(cp)))
 
-    def _wing_label(self, cp, cdir, prof) -> str:
-        ann = load_annotation(annotation_path(cp, cdir))
+    def _meth_mark(self, cp, cdir, prof) -> str:
+        """✓ all points, ● some, ○ none — for one methodology."""
+        ann = load_annotation(annotation_path(cp, cdir, prof.methodology_id))
         if ann is None:
-            return f"○  {cp.name}"
+            return "○"
         done, total = ann.progress(prof.ids)
-        mark = "✓" if done == total and total else "●"
-        return f"{mark}  {cp.name}"
+        return "✓" if done == total and total else "●"
+
+    def _wing_label(self, cp, cdir) -> str:
+        # Show both methodologies' status so it is always clear which is done.
+        marks = []
+        for mid, m in METHODOLOGIES.items():
+            prof = get_profile(DEFAULT_PROFILE_PER_METHODOLOGY[mid])
+            marks.append(f"{m.display_name[0]}:{self._meth_mark(cp, cdir, prof)}")
+        return f"{cp.name}   {'  '.join(marks)}"
 
     def _on_item_clicked(self, item: "QTreeWidgetItem", _col: int) -> None:
         data = item.data(0, _ROLE)
@@ -130,10 +210,10 @@ class LandmarkTab(QWidget):
     def stop_worker(self) -> None:
         """Interrupt and wait for background work so its signals can't reach a
         widget that is about to be destroyed."""
-        w = self._worker
-        if w is not None and not sip.isdeleted(w) and w.isRunning():
-            w.requestInterruption()
-            w.wait(5000)
+        for w in (self._worker, self._crop_worker):
+            if w is not None and not sip.isdeleted(w) and w.isRunning():
+                w.requestInterruption()
+                w.wait(5000)
         mw = getattr(self.annot, "_ml_worker", None)
         if mw is not None and not sip.isdeleted(mw) and mw.isRunning():
             mw.requestInterruption()
@@ -145,7 +225,17 @@ class LandmarkTab(QWidget):
         self.progress.setRange(0, 1)
         self.progress.setValue(1)
         self.run_btn.setEnabled(True)
-        self.enter()  # rebuild tree (refresh progress marks)
+        self._build_tree()      # refresh progress marks
+        self._open_first_crop()  # land on the first crop with its new points
+
+    def _open_first_crop(self) -> None:
+        if self.tree.topLevelItemCount() == 0:
+            return
+        scan = self.tree.topLevelItem(0)
+        self.tree.expandItem(scan)      # triggers _populate
+        if scan.childCount() and scan.child(0).data(0, _ROLE):
+            self.tree.setCurrentItem(scan.child(0))
+            self._open_wing(scan.child(0))
 
 
 class ProjectWindow(QMainWindow):
@@ -169,6 +259,8 @@ class ProjectWindow(QMainWindow):
         outer.addLayout(bar)
 
         self.tabs = QTabWidget()
+        # Let pages drive navigation (e.g. crop page "done" -> Точки).
+        self.ctx["goto_tab"] = self.tabs.setCurrentIndex
         self.crop_tab = CropPage(self.ctx)
         self.landmark_tab = LandmarkTab(self.ctx)
         self.export_tab = ExportPage(self.ctx)

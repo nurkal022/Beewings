@@ -156,6 +156,40 @@ def test_landmark_tab_tree(qapp, tmp_path):
     assert tab.annot.image_list.isVisible() is False
 
 
+def test_landmark_tab_methodology_switch_and_dual_marks(qapp, tmp_path):
+    import cv2, numpy as np
+    from beewings.pipeline.project import CropProject
+    from beewings.app.project_window import LandmarkTab
+    from beewings.core.profiles import get_profile
+    from beewings.core.schema import (Landmark, WingAnnotation,
+                                      annotation_path, save_annotation)
+    folder = tmp_path / "proj"; folder.mkdir()
+    cv2.imwrite(str(folder / "a.jpg"), np.full((50, 50, 3), 255, np.uint8))
+    proj = CropProject.open_folder(folder)
+    entry = proj.scans[0]; entry.cropped = True
+    cdir = proj.crops_dir(entry); cdir.mkdir(parents=True, exist_ok=True)
+    cp = cdir / "a_crop_0.jpg"
+    cv2.imwrite(str(cp), np.full((40, 80, 3), 255, np.uint8))
+    # annotate the crop only in Alpatov
+    alp = get_profile("Алпатов 12 точек")
+    ann = WingAnnotation(image=cp.name, image_size=(80, 40), profile=alp.name,
+                         landmarks=[Landmark(id=i, x=1.0, y=1.0) for i in alp.ids])
+    save_annotation(ann, annotation_path(cp, cdir, alp.methodology_id))
+    proj.save()
+
+    tab = LandmarkTab({"project": proj})
+    tab.enter()
+    parent = tab.tree.topLevelItem(0)
+    tab.tree.expandItem(parent)
+    label = parent.child(0).text(0)
+    assert "А:✓" in label and "Т:○" in label    # both methodologies shown
+
+    # switching methodology updates the project profile + checkpoint
+    tab._on_methodology("tofilski")
+    assert proj.settings.profile == get_profile("Тофильский 19 точек").name
+    assert "tofilski19" in proj.settings.checkpoint
+
+
 def test_crop_auto_confirms_when_work_exists(qapp, tmp_path, monkeypatch):
     import cv2, numpy as np
     from PyQt6.QtWidgets import QMessageBox
@@ -206,20 +240,24 @@ def test_side_panel_is_scrollable(qapp):
 def test_export_page_layout_and_run(qapp, tmp_path):
     import cv2, numpy as np
     from PyQt6.QtWidgets import QFrame
-    from beewings.pipeline.project import CropProject, auto_detect, recrop
+    from beewings.pipeline.project import CropProject
     from beewings.pipeline.pages.export_page import ExportPage
+    from tests._annotate import annotate_first_crop
     folder = tmp_path / "proj"; folder.mkdir()
     cv2.imwrite(str(folder / "a.jpg"), np.full((200, 300, 3), 255, np.uint8))
     proj = CropProject.open_folder(folder)
-    auto_detect(proj.scans[0], proj.settings); recrop(proj, proj.scans[0]); proj.save()
+    # build one annotated crop directly (no detection on a blank image)
+    entry = proj.scans[0]; entry.cropped = True
+    cdir = proj.crops_dir(entry); cdir.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(cdir / "a_crop_0.jpg"), np.full((40, 80, 3), 255, np.uint8))
+    annotate_first_crop(proj, entry); proj.save()
     page = ExportPage({"project": proj})
     page.enter()
     assert page.findChild(QFrame, "card") is not None      # card layout
-    assert all(cb.isChecked() for cb in page.checks.values())  # all on by default
     assert "Папка проекта" in page.info.text()
     page._export()
     assert not page.result.isHidden() and "Готово" in page.result.text()
-    assert (proj.root / "export").exists()
+    assert (proj.root / "a" / "a_alpatov.json").exists()
 
 
 def test_export_page_slots_noop_after_delete(qapp, tmp_path):

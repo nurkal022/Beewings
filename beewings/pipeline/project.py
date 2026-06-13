@@ -15,7 +15,10 @@ class Settings:
     margin: float = 0.10
     delta: int = 45
     label_frac: Optional[float] = None
-    rotate: bool = True
+    # Auto horizon/orientation of crops is disabled: the flip heuristic still
+    # mis-rotates some wings. Crops are kept in their original orientation until
+    # this is solved (e.g. by the ML stage).
+    rotate: bool = False
     profile: str = "Алпатов 12 точек"
     checkpoint: str = "checkpoints/alpatov12.pt"
 
@@ -210,25 +213,37 @@ from ..core.cvio import imread, imwrite
 from ..segment.crop import crop_box, crop_wing
 from ..segment.debug import render_overlay
 from ..segment.layout import reading_order
-from ..segment.slide import detect_label_region, estimate_background
-from ..segment.wings import find_wings, wing_mask
+from ..segment.slide import estimate_background
+from ..segment.wings import find_wings, wing_mask, filter_wings, drop_ink_blobs
 
 
 def auto_detect(entry: ScanEntry, settings: Settings) -> None:
-    """Fill entry.label_box and entry.wing_boxes by running segmentation."""
+    """Fill entry.wing_boxes by running wing segmentation.
+
+    Focus is on wings only. The handwritten label is *not* auto-detected: the
+    geometric filter (:func:`filter_wings`) drops label characters by shape, so
+    we no longer need a fragile label box that risked eating wings. An optional
+    ``settings.label_frac`` still lets the operator blank a fixed left fraction
+    (e.g. a label that abuts the wings) before detection.
+    """
     img = imread(entry.path)
     if img is None:
         raise ValueError(f"cannot read image: {entry.path}")
     bg = estimate_background(img)
+
     if settings.label_frac is not None:
         h, w = img.shape[:2]
-        label = (0, 0, int(round(settings.label_frac * w)), h)
+        exclude = (0, 0, int(round(settings.label_frac * w)), h)
+        mask = wing_mask(img, bg, delta=settings.delta, exclude=exclude)
     else:
-        label = detect_label_region(img, bg)
-    mask = wing_mask(img, bg, delta=settings.delta, exclude=label)
-    boxes = find_wings(mask)
+        mask = wing_mask(img, bg, delta=settings.delta)
+
+    boxes = filter_wings(find_wings(mask))
+    # Reject solid-ink blobs (handwritten label characters); a wing's
+    # translucent membrane has far less ink-dark area than a character.
+    boxes = drop_ink_blobs(img, bg, boxes)
     order = reading_order(boxes)
-    entry.label_box = label
+    entry.label_box = None
     entry.wing_boxes = [boxes[i] for i in order]
 
 

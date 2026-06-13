@@ -230,7 +230,6 @@ class AnnotatorWidget(QWidget):
         self.side.toggle_uncertain_requested.connect(self._toggle_uncertain_id)
         self.side.toggle_skipped_requested.connect(self._toggle_skipped_id)
         self.side.zoom_to_landmark_requested.connect(lambda lid: self.canvas.zoom_to_landmark(lid, factor=8.0))
-        self.side.auto_detect_requested.connect(self._run_auto_detect)
         self.side.ml_detect_requested.connect(self._run_ml_detect)
         self.canvas.landmark_context_menu.connect(self._show_landmark_context_menu)
 
@@ -300,6 +299,11 @@ class AnnotatorWidget(QWidget):
         if self._project_dir != folder:
             self.load_folder(folder)
         self.image_list.select_path(path)
+
+    def set_active_profile(self, profile_name: str) -> None:
+        """Switch the active methodology/profile (saves current first)."""
+        if profile_name and profile_name != self._profile.name:
+            self._on_profile_changed(profile_name)
 
     def open_folder_dialog(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку с изображениями")
@@ -832,77 +836,6 @@ class AnnotatorWidget(QWidget):
         if low_conf_ids:
             msg += f" — проверь точки {low_conf_ids}"
         self.status.emit(msg)
-
-    def _run_auto_detect(self) -> None:
-        """Run the classical detector on the current image and fill landmarks.
-
-        Looks for a trained shape model at <project_dir>/shape_model.json or
-        falls back to ./shape_model.json. If neither exists, falls back to
-        training one from <project_dir>/landmarks.csv (the workflow if the
-        user annotated some specimens first and exported a CSV).
-        """
-        if sip.isdeleted(self):
-            return
-        if self._current_ann is None or self._current_image_path is None or self._project_dir is None:
-            return
-        from ..detector.pipeline import Detector
-        from ..detector.shape_model import ShapeModel, build_from_csv
-
-        # Only look inside the currently open project — never fall back to the
-        # CWD, because a stale shape_model.json or landmarks.csv there can
-        # reference images outside this project and yield zero specimens.
-        model_path = self._project_dir / "shape_model.json"
-        csv_path = self._project_dir / "landmarks.csv"
-        try:
-            if model_path.exists():
-                model = ShapeModel.load(model_path)
-            elif csv_path.exists():
-                self.status.emit("Обучаю shape-модель из landmarks.csv …")
-                self.repaint()
-                model = build_from_csv(csv_path, self._project_dir)
-                if model.n_specimens == 0:
-                    QMessageBox.warning(
-                        self, "Нет образцов",
-                        "В landmarks.csv нет ни одной строки, ссылающейся на изображение в этой папке.\n\n"
-                        "Используй кнопку «🧠 ML авто-определить точки» — она работает без локальной "
-                        "обучающей выборки."
-                    )
-                    return
-                model.save(self._project_dir / "shape_model.json")
-            else:
-                QMessageBox.information(
-                    self, "Классический детектор недоступен",
-                    "Для классического детектора нужны размеченные эталоны "
-                    "в этой папке (shape_model.json или landmarks.csv).\n\n"
-                    "Используй кнопку «🧠 ML авто-определить точки» — она "
-                    "работает без локальной обучающей выборки."
-                )
-                return
-
-            det = Detector(model, gate_radius=80.0)
-            self.status.emit("Запускаю детектор на текущем крыле …")
-            self.repaint()
-            # Use the original image (without flip): detector operates on raw pixels.
-            with self._current_image_path.open("rb") as f:
-                buf = np.frombuffer(f.read(), dtype=np.uint8)
-            bgr = cv2.imdecode(buf, cv2.IMREAD_COLOR)
-            result = det.detect(bgr, self._current_image_path)
-        except Exception as ex:  # surface any pipeline error nicely
-            QMessageBox.critical(self, "Ошибка детектора", f"{type(ex).__name__}: {ex}")
-            return
-
-        # Save undo snapshot and overwrite landmarks with detector output.
-        self._undo.push(self._current_ann.landmarks)
-        for lid, (x, y) in result.predicted.items():
-            self._current_ann.set_landmark(lid, x, y)
-        self.canvas.refresh_landmarks()
-        self.canvas.set_current_id(self._current_lm_id)
-        self.side.refresh(self._current_ann)
-        self._save_current()
-        self.status.emit(
-            f"Детектор: {len(result.predicted)}/{len(model.landmark_ids)} точек расставлено. "
-            f"Проверь и подправь вручную."
-        )
 
     def _show_landmark_context_menu(self, lm_id: int, global_pos) -> None:
         menu = QMenu(self)

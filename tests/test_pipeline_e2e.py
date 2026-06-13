@@ -5,11 +5,12 @@ from pathlib import Path
 import cv2
 
 from beewings.pipeline.project import CropProject, auto_detect, recrop
-from beewings.pipeline.export import export_protocol
+from beewings.pipeline.export import export_per_scan
+from tests._annotate import annotate_first_crop
 
 
 def test_pipeline_crop_then_export(scan_file, tmp_path):
-    """Scans -> auto-detect -> recrop -> export (no ML), fully headless."""
+    """Scans -> auto-detect -> recrop -> annotate -> per-scan export, headless."""
     scan_path, meta = scan_file
     proj = CropProject.create(tmp_path / "proj", scans_root=str(scan_path.parent),
                               scan_paths=[scan_path])
@@ -18,8 +19,9 @@ def test_pipeline_crop_then_export(scan_file, tmp_path):
     proj.save()
     assert n == meta["n_wings"]
 
-    out = proj.root / "export"
-    stats = export_protocol(proj, out, include={"folders", "report"})
+    annotate_first_crop(proj, proj.scans[0])
+    stats = export_per_scan(proj)
     assert stats["n_scans"] == 1
-    assert (out / "report.json").exists()
-    assert (out / "data" / scan_path.stem).exists()
+    sdir = proj.root / scan_path.stem
+    assert (sdir / f"{scan_path.stem}_alpatov.json").exists()
+    assert (sdir / "crops").is_dir()

@@ -6,7 +6,7 @@ treat everything left of it as the label.
 """
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -93,5 +93,51 @@ def detect_label_region(
     if xs.size == 0:
         return None
     x0, x1 = int(xs.min()), int(xs.max())
+    y0, y1 = int(ys.min()), int(ys.max())
+    return (x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+
+
+def label_box_from_wings(
+    img: np.ndarray,
+    bg: float,
+    wing_boxes: List[Box],
+    gap_frac: float = 0.01,
+    min_w_frac: float = 0.03,
+) -> Optional[Box]:
+    """Derive the label box as foreground content left of the leftmost wing.
+
+    The wing grid is found first (label text removed by the geometric wing
+    filter), so the wings themselves bound where the label can be. We take all
+    dark content strictly left of the leftmost wing, minus a small gap. Because
+    the cut is *left of every wing*, this can never eat a real wing — the
+    deliberately safe bias, since a lost wing costs a manual re-add while a
+    stray label box costs only a manual delete.
+
+    Returns None when there is no room for a label (wings reach the edge), when
+    the left content is too slight to be a label (`min_w_frac` of the slide
+    width), or when content is not anchored near the far-left edge.
+    """
+    if not wing_boxes:
+        return None
+    h, w = img.shape[:2]
+    leftmost = min(b[0] for b in wing_boxes)
+    gap = max(5, int(w * gap_frac))
+    cut = leftmost - gap
+    if cut <= 0:
+        return None  # wings start at the very edge -> no room for a label
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    fg = _foreground(gray, bg)
+    band = fg[:, :cut]
+    ys, xs = np.where(band > 0)
+    if xs.size == 0:
+        return None
+    x0, x1 = int(xs.min()), int(xs.max())
+    # A real label is anchored near the far-left edge and is a substantial
+    # block; reject mid-slide speckle and slivers.
+    if x0 > int(w * 0.15):
+        return None
+    if (x1 - x0 + 1) < int(w * min_w_frac):
+        return None
     y0, y1 = int(ys.min()), int(ys.max())
     return (x0, y0, x1 - x0 + 1, y1 - y0 + 1)

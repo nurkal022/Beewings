@@ -28,6 +28,20 @@ def test_crop_wing_rotate_makes_landscape():
     assert out.shape[1] >= out.shape[0]  # width >= height
 
 
+def test_crop_wing_puts_dark_base_on_left():
+    # Horizontal wing-like bar (mid-gray) with a dark, dense "base" on the RIGHT.
+    # Canonical rotate must flip it so the dark base ends up on the LEFT.
+    img = np.full((120, 300, 3), 255, np.uint8)
+    img[55:65, 40:260] = 120          # faint wing blade
+    img[45:75, 220:258] = 20          # dark dense base on the right
+    box = (40, 45, 220, 30)
+    out = crop_wing(img, box, margin=0.05, rotate=True, bg=255.0)
+    gray = out[:, :, 0]
+    half = out.shape[1] // 2
+    dark = gray < (255 - 70)
+    assert dark[:, :half].sum() > dark[:, half:].sum()  # base now on the left
+
+
 from beewings.segment.debug import render_overlay
 
 

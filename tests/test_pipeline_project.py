@@ -46,7 +46,7 @@ def test_auto_detect_fills_boxes(scan_file, tmp_path):
                               scan_paths=[scan_path])
     auto_detect(proj.scans[0], proj.settings)
     assert len(proj.scans[0].wing_boxes) == meta["n_wings"]
-    assert proj.scans[0].label_box is not None
+    assert proj.scans[0].label_box is None  # label no longer auto-detected
 
 
 def test_recrop_writes_crops(scan_file, tmp_path):
@@ -60,7 +60,8 @@ def test_recrop_writes_crops(scan_file, tmp_path):
     crop_dir = proj.crops_dir(proj.scans[0])
     crops = list(crop_dir.glob(f"{scan_path.stem}_crop_*.jpg"))
     assert len(crops) == meta["n_wings"]
-    assert (crop_dir / f"{scan_path.stem}_label.jpg").exists()
+    # No label crop: label auto-detection was removed in favour of wings-only.
+    assert not (crop_dir / f"{scan_path.stem}_label.jpg").exists()
     assert proj.scans[0].cropped is True
 
 
