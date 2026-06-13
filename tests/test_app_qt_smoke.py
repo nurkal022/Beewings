@@ -156,6 +156,16 @@ def test_landmark_tab_tree(qapp, tmp_path):
     assert tab.annot.image_list.isVisible() is False
 
 
+def test_crop_files_natural_order(tmp_path):
+    import cv2, numpy as np
+    from beewings.app.project_window import _crop_files
+    for i in (0, 1, 2, 10, 11):
+        cv2.imwrite(str(tmp_path / f"a_crop_{i}.jpg"),
+                    np.full((10, 10, 3), 255, np.uint8))
+    order = [p.stem for p in _crop_files(tmp_path)]
+    assert order == ["a_crop_0", "a_crop_1", "a_crop_2", "a_crop_10", "a_crop_11"]
+
+
 def test_landmark_tab_methodology_switch_and_dual_marks(qapp, tmp_path):
     import cv2, numpy as np
     from beewings.pipeline.project import CropProject

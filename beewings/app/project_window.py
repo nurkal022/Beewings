@@ -1,6 +1,7 @@
 """Project window: top tabs over a CropProject (Нарезка / Точки / Экспорт)."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -25,10 +26,17 @@ _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
 _ROLE = Qt.ItemDataRole.UserRole
 
 
+def _crop_index(p) -> int:
+    """Trailing wing number, e.g. ..._crop_10.jpg -> 10 (for natural ordering)."""
+    m = re.search(r"_crop_(\d+)$", Path(p).stem)
+    return int(m.group(1)) if m else 1 << 30
+
+
 def _crop_files(cdir):
     skip = ("_label", "_debug")
-    return sorted(p for p in cdir.glob("*")
-                  if p.suffix.lower() in _IMAGE_EXTS and not any(t in p.stem for t in skip))
+    crops = [p for p in cdir.glob("*")
+             if p.suffix.lower() in _IMAGE_EXTS and not any(t in p.stem for t in skip)]
+    return sorted(crops, key=lambda p: (_crop_index(p), p.name))  # 1,2,...,10,11
 
 
 class LandmarkTab(QWidget):
@@ -165,12 +173,15 @@ class LandmarkTab(QWidget):
         return "✓" if done == total and total else "●"
 
     def _wing_label(self, cp, cdir) -> str:
-        # Show both methodologies' status so it is always clear which is done.
+        # The scan name is already on the parent node — show only the wing
+        # number here so both methodology marks stay visible.
         marks = []
         for mid, m in METHODOLOGIES.items():
             prof = get_profile(DEFAULT_PROFILE_PER_METHODOLOGY[mid])
             marks.append(f"{m.display_name[0]}:{self._meth_mark(cp, cdir, prof)}")
-        return f"{cp.name}   {'  '.join(marks)}"
+        n = _crop_index(cp)
+        name = f"Крыло {n + 1}" if n != (1 << 30) else cp.name
+        return f"{name}   {'  '.join(marks)}"
 
     def _on_item_clicked(self, item: "QTreeWidgetItem", _col: int) -> None:
         data = item.data(0, _ROLE)
