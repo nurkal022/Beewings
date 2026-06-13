@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from ..core.paths import resolve_checkpoint
 from .landmarks import run_landmarks
 from .project import CropProject, auto_detect, recrop
 
@@ -68,7 +69,7 @@ class LandmarkWorker(QThread):
                     run_landmarks(
                         cdir,
                         profile_name=self.project.settings.profile,
-                        checkpoint=Path(self.project.settings.checkpoint),
+                        checkpoint=resolve_checkpoint(self.project.settings.checkpoint),
                         # CPU: this is a background QThread; GPU (MPS/Metal) here
                         # contends with the main thread's canvas rendering and
                         # crashes natively on macOS.

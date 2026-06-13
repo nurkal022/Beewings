@@ -755,8 +755,10 @@ class AnnotatorWidget(QWidget):
         ckpt_candidates: list[Path] = []
         if env_ckpt:
             ckpt_candidates.append(Path(env_ckpt))
+        from ..core.paths import app_base_dir
         ckpt_candidates.extend([
             self._project_dir / "checkpoints" / ckpt_filename,
+            app_base_dir() / "checkpoints" / ckpt_filename,
             Path("checkpoints") / ckpt_filename,
             Path("checkpoints/best.pt") if ckpt_filename == "tofilski19.pt" else Path(""),
             Path("runs/unet19_v1/best.pt") if ckpt_filename == "tofilski19.pt" else Path(""),
