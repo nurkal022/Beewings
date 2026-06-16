@@ -143,9 +143,9 @@ def parse_tree(root: Path, only_n: Optional[int] = None,
     return records
 
 
-def _deterministic_split(image_path: Path, val_frac: float, test_frac: float) -> str:
-    """Hash image path -> deterministic train/val/test bucket."""
-    h = hashlib.md5(str(image_path).encode("utf-8")).hexdigest()
+def _deterministic_split(key: str, val_frac: float, test_frac: float) -> str:
+    """Hash a split key -> deterministic train/val/test bucket."""
+    h = hashlib.md5(key.encode("utf-8")).hexdigest()
     bucket = int(h[:8], 16) / 0xFFFFFFFF
     if bucket < test_frac:
         return "test"
@@ -154,9 +154,24 @@ def _deterministic_split(image_path: Path, val_frac: float, test_frac: float) ->
     return "train"
 
 
+def _split_key(image_path: Path, split_by: str) -> str:
+    """Key used for the deterministic split.
+
+    "image"  — per-image (legacy): wings of the same colony may straddle
+               train/val, inflating validation metrics because sibling wings
+               are near-identical.
+    "family" — per parent folder (colony/apiary): all wings of one colony land
+               in the same split. Honest generalization estimate.
+    """
+    if split_by == "family":
+        return str(image_path.parent)
+    return str(image_path)
+
+
 def write_csv(records: List[TpsRecord], out_csv: Path, n_points: int,
               val_frac: float = 0.1, test_frac: float = 0.05,
-              relative_to: Optional[Path] = None) -> Dict[str, int]:
+              relative_to: Optional[Path] = None,
+              split_by: str = "image") -> Dict[str, int]:
     """Write filtered records (only those matching n_points) to CSV."""
     rows = []
     splits = Counter()
@@ -172,7 +187,7 @@ def write_csv(records: List[TpsRecord], out_csv: Path, n_points: int,
                 path_str = str(abs_img)
         else:
             path_str = str(abs_img)
-        split = _deterministic_split(r.image_path, val_frac, test_frac)
+        split = _deterministic_split(_split_key(r.image_path, split_by), val_frac, test_frac)
         splits[split] += 1
         row = {
             "image_path": path_str,
@@ -215,12 +230,15 @@ def main(argv=None) -> int:
     p.add_argument("--test-frac", type=float, default=0.05)
     p.add_argument("--relative-to", type=Path, default=None,
                    help="Make image_path relative to this directory (good for cross-machine training).")
+    p.add_argument("--split-by", choices=("image", "family"), default="image",
+                   help="'family' keeps all wings of one colony/apiary folder in the same "
+                        "train/val/test split (avoids leakage); 'image' is the legacy per-image split.")
     args = p.parse_args(argv)
 
     records = parse_tree(args.root, only_n=args.n_points)
     splits = write_csv(records, args.out, n_points=args.n_points,
                        val_frac=args.val_frac, test_frac=args.test_frac,
-                       relative_to=args.relative_to)
+                       relative_to=args.relative_to, split_by=args.split_by)
     print(f"\nWrote {sum(splits.values())} rows to {args.out}")
     print(f"Split: {splits}")
     return 0
