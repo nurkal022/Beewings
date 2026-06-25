@@ -11,10 +11,35 @@
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e .            # для API: pip install -e ".[api]"
 ```
 
-## Быстрый старт (демо)
+### Модели (обязательно для ML / детекции)
+
+Веса (`alpatov12.pt`, `tofilski19.pt`, ~43 МБ каждый) **не лежат в git** —
+скачай их в `checkpoints/`:
+
+```bash
+make models                # или: bash scripts/download_models.sh
+```
+
+## Быстрый запуск API
+
+```bash
+make install               # pip install -e ".[api]"
+make models                # скачать веса в checkpoints/
+make run                   # API на http://localhost:8000  (Swagger: /docs)
+```
+
+Через Docker (веса уже внутри образа):
+
+```bash
+make docker-build && make docker-run      # или: docker compose up --build
+```
+
+Все удобные команды — `make help`. Переменные окружения — см. [.env.example](.env.example).
+
+## Быстрый старт GUI (демо)
 
 ```bash
 beewings
