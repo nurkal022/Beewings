@@ -1,0 +1,29 @@
+# Keep the build context small. The Dockerfile copies only the package,
+# pyproject, README, and the two model weights it needs.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+*.egg-info
+
+# Data / experiments — not needed in the API image.
+data
+demo_scans
+demo_wings
+reports
+packaging
+tools
+crop_yolo
+crop_yolo_v2
+assets
+*.png
+
+# Exclude all training runs EXCEPT the two checkpoints the image needs.
+runs/*
+!runs/alpatov12_v1
+runs/alpatov12_v1/*
+!runs/alpatov12_v1/best.pt
+!runs/unet19_v1
+runs/unet19_v1/*
+!runs/unet19_v1/best.pt

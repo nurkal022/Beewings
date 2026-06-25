@@ -34,9 +34,15 @@ beewings-ml-report = "beewings.ml.report:main"
 beewings-classify = "beewings.ml.classify:main"
 beewings-crop = "beewings.segment.cli:main"
 beewings-pipeline = "beewings.app.app:main"
+beewings-api = "beewings.api.run:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

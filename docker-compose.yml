@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    image: beewings-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Confine server-side file paths (image_path / scan_path / out_dir) to /data.
+      BEEWINGS_DATA_ROOT: /data
+      # BEEWINGS_CORS_ORIGINS: "https://your-frontend.example"
+    volumes:
+      # Mount a host folder with scans/wings to use the path-based endpoints.
+      - ./data_io:/data

@@ -67,6 +67,7 @@ beewings
 | `beewings-detect` | Классический CV-детектор (резерв без обучения) |
 | `beewings-eval` | Eval классического детектора |
 | `beewings-canonicalize` | Каноникализация порядка точек в CSV |
+| `beewings-api` | HTTP REST API (FastAPI) — детекция / нарезка / индексы / экспорт |
 
 ### Пакетный пример
 
@@ -151,6 +152,72 @@ beewings-ml-report \
 - `per_landmark.png` — bar chart mean/median/p90 ошибок по точкам
 - `error_hist.png` — гистограмма распределения ошибок
 - `sample_overlays/` — 12 примеров с GT (зелёный) vs prediction (красный)
+
+---
+
+## HTTP API
+
+Тонкая REST-обёртка (FastAPI) над теми же функциями ядра — чтобы работать с
+системой программно. Все эндпоинты принимают **и** загрузку файла (multipart),
+**и** путь к файлу на сервере.
+
+### Запуск
+
+```bash
+pip install -e ".[api]"
+beewings-api                       # http://0.0.0.0:8000 (Swagger UI на /docs)
+# или: uvicorn beewings.api.app:app --reload
+```
+
+Переменные окружения: `BEEWINGS_API_HOST` / `BEEWINGS_API_PORT`,
+`BEEWINGS_CHECKPOINTS` (папка с `.pt`, по умолчанию `checkpoints/`),
+`BEEWINGS_DEVICE` (`auto`/`cuda`/`mps`/`cpu`),
+`BEEWINGS_DATA_ROOT` (ограничивает серверные пути для безопасности),
+`BEEWINGS_CORS_ORIGINS`.
+
+### Эндпоинты
+
+| Метод/путь | Назначение |
+|---|---|
+| `GET /health` | Статус, устройство, загруженные модели |
+| `GET /models` | Доступные методики и чекпоинты |
+| `POST /detect` | Картинка крыла → точки + confidence (+ индексы для Алпатов-12) |
+| `POST /segment` | Скан → отдельные крылья (`output=inline` base64 / `output=files`) |
+| `POST /indices` | Координаты 12 точек → CI/DsA/RI + кандидаты подвида |
+| `POST /export` | Аннотации → TPS/XLSX/JSON (`format=tps\|xlsx\|json\|all`) |
+
+```bash
+# Детекция (Алпатов 12 точек), загрузка файла, с TTA
+curl -F image=@demo_wings/demo_realdata_01.jpg \
+     -F methodology=alpatov -F tta=true \
+     localhost:8000/detect
+
+# Детекция по серверному пути (JSON-режим)
+curl -X POST localhost:8000/detect -H 'content-type: application/json' \
+     -d '{"image_path":"/data/wing.jpg","methodology":"tofilski"}'
+
+# Нарезка скана, кропы в ответе как base64
+curl -F scan=@demo_scans/01_klat.jpg "localhost:8000/segment?" -F output=inline
+
+# Экспорт в zip (tps+xlsx+json)
+curl -X POST "localhost:8000/export?format=all" -H 'content-type: application/json' \
+     -d '{"methodology":"alpatov","wings":[{"wing":"c0.jpg","landmarks":[{"id":1,"x":10,"y":5}]}]}' \
+     -o export.zip
+```
+
+> Индексы (CI и др.) помечены как **предварительные** — ID точек должен подтвердить
+> биолог по эталонной диаграмме (см. `beewings/core/indices.py`).
+
+### Docker
+
+```bash
+docker build -t beewings-api .      # CPU-образ, веса копируются из runs/
+docker run -p 8000:8000 beewings-api
+# или: docker compose up --build   (volume ./data_io → /data, BEEWINGS_DATA_ROOT=/data)
+```
+
+`checkpoints/*.pt` в репозитории — это симлинки на `runs/*/best.pt`; Dockerfile
+копирует реальные файлы весов напрямую.
 
 ---
 
@@ -242,16 +309,23 @@ beewings/
 │   ├── matching.py
 │   ├── canonicalize.py
 │   └── evaluate.py
-└── ml/                   # PyTorch ML pipeline
-    ├── prepare.py        # TPS → unified CSV
-    ├── dataset.py        # Dataset + albumentations
-    ├── model.py          # UNet
-    ├── heatmap.py        # Gaussian encoding + sub-pixel decoding
-    ├── train.py          # Training loop с AMP + cosine LR
-    ├── inference.py      # checkpoint → predictions (+ TTA + confidence)
-    ├── batch.py          # Pakage CLI
-    ├── evaluate.py       # Stats vs CSV ground truth
-    └── report.py         # Paper-ready figures
+├── ml/                   # PyTorch ML pipeline
+│   ├── prepare.py        # TPS → unified CSV
+│   ├── dataset.py        # Dataset + albumentations
+│   ├── model.py          # UNet
+│   ├── heatmap.py        # Gaussian encoding + sub-pixel decoding
+│   ├── train.py          # Training loop с AMP + cosine LR
+│   ├── inference.py      # checkpoint → predictions (+ TTA + confidence)
+│   ├── batch.py          # Pakage CLI
+│   ├── evaluate.py       # Stats vs CSV ground truth
+│   └── report.py         # Paper-ready figures
+└── api/                  # FastAPI REST-обёртка над ядром
+    ├── app.py            # Приложение, CORS, /health, /models
+    ├── registry.py       # Ленивый кэш моделей (per-model lock)
+    ├── io.py             # Ввод картинки (upload | путь) + защита путей
+    ├── schemas.py        # Pydantic DTO запросов/ответов
+    ├── run.py            # Точка входа beewings-api (uvicorn)
+    └── routers/          # detect / segment / indices / export
 ```
 
 ## Структура данных
