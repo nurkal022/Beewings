@@ -22,7 +22,10 @@ WORKDIR /app
 
 # Install the CPU build of torch first so it lands in its own cached layer and
 # pip does not pull the much larger CUDA wheel to satisfy torch>=2.1.
-RUN pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+# --timeout/--retries make the large wheel download resilient under slow
+# cross-arch (QEMU) builds, where the default 15s read timeout can trip.
+RUN pip install --timeout 300 --retries 8 \
+        --index-url https://download.pytorch.org/whl/cpu torch torchvision
 
 # Project metadata + source, then install with the API extra.
 # A C/C++ toolchain is needed only to build `stringzilla` (pulled in transitively
@@ -32,7 +35,7 @@ COPY pyproject.toml README.md ./
 COPY beewings ./beewings
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
-    && pip install ".[api]" \
+    && pip install --timeout 300 --retries 8 ".[api]" \
     && apt-get purge -y build-essential \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
