@@ -30,7 +30,8 @@ class MainWindow(QMainWindow):
         file_menu.addAction(open_act)
         for label, slot in (("Экспорт CSV…", self.annot._export_csv),
                             ("Экспорт TPS…", self.annot._export_tps),
-                            ("Экспорт COCO…", self.annot._export_coco)):
+                            ("Экспорт COCO…", self.annot._export_coco),
+                            ("Экспорт .dw.png…", self.annot._export_dw)):
             act = QAction(label, self)
             act.triggered.connect(slot)
             file_menu.addAction(act)

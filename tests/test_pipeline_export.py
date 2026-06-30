@@ -80,6 +80,25 @@ def test_export_separates_two_methodologies(tmp_path):
     assert t["index_means"] == {}
 
 
+def test_export_writes_dw_png_for_tofilski(tmp_path):
+    from beewings.pipeline.export import export_per_scan
+    from beewings.core.io_dw import read_dw_png
+    proj = _make_project_with_crops(
+        tmp_path, methodologies=("Алпатов 12 точек", "Тофильский 19 точек"))
+    export_per_scan(proj)
+    sdir = Path(proj.root) / "8"
+    dw_files = sorted((sdir / "dw").glob("*.dw.png"))
+    assert len(dw_files) == 2                       # one per annotated wing
+    assert len(read_dw_png(dw_files[0])) == 19      # round-trips to 19 points
+
+
+def test_export_no_dw_png_without_tofilski(tmp_path):
+    from beewings.pipeline.export import export_per_scan
+    proj = _make_project_with_crops(tmp_path)  # Alpatov only
+    export_per_scan(proj)
+    assert not (Path(proj.root) / "8" / "dw").exists()
+
+
 def test_export_json_has_metadata_and_wings(tmp_path):
     from beewings.pipeline.export import export_per_scan
     proj = _make_project_with_crops(tmp_path)

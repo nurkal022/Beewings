@@ -17,6 +17,7 @@ from typing import Dict, List
 import openpyxl
 
 from ..core.indices import compute_all_alpatov
+from ..core.io_dw import export_dw_png
 from ..core.io_tps import export_tps
 from ..core.profiles import (DEFAULT_PROFILE_PER_METHODOLOGY, METHODOLOGIES,
                              Profile, get_profile)
@@ -27,6 +28,9 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
 
 # Classical indices (CI/DsA/RI) are defined only for the Alpatov methodology.
 _INDEX_METHODOLOGY = "alpatov"
+
+# IdentiFly/DrawWing .dw.png export is a 19-point format → only the Tofilski set.
+_DW_METHODOLOGY = "tofilski"
 
 
 def _export_profiles() -> List[Profile]:
@@ -155,6 +159,11 @@ def export_per_scan(project: CropProject) -> Dict:
             n_points = len(prof.ids)
             n_wings += len(items)
             export_tps([a for _, a in items], sdir / f"{stem}_{mid}.tps")
+            if mid == _DW_METHODOLOGY:
+                # One IdentiFly/DrawWing .dw.png per fully-annotated wing.
+                dw_dir = sdir / "dw"
+                for cp, ann in items:
+                    export_dw_png(cp, ann, dw_dir / f"{cp.stem}.dw.png")
             rows = [_wing_row(cp.name, ann, n_points, with_idx) for cp, ann in items]
             _write_xlsx(rows, n_points, sdir / f"{stem}_{mid}.xlsx")
             (sdir / f"{stem}_{mid}.json").write_text(

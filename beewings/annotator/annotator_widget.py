@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
 
 from ..core.io_coco import export_coco
 from ..core.io_csv import export_csv
+from ..core.io_dw import export_dw_png
 from ..core.io_tps import export_tps
 from ..core.profiles import DEFAULT_PROFILE, Profile, get_profile
 from ..core.schema import (
@@ -685,6 +686,30 @@ class AnnotatorWidget(QWidget):
             return
         export_coco(self._collect_all_annotations(), Path(out), self._project_dir, self._profile.name)
         self.status.emit(f"Сохранено: {out}")
+
+    def _export_dw(self) -> None:
+        """Export the current wing as an IdentiFly/DrawWing .dw.png."""
+        self._save_current()
+        if self._current_ann is None or self._current_image_path is None:
+            return
+        if self._profile.methodology_id != "tofilski":
+            QMessageBox.warning(
+                self, "Недоступно для этой методологии",
+                "Формат .dw.png (IdentiFly/DrawWing) — это 19 точек Тофильского.\n"
+                "Переключитесь на профиль «Тофильский 19 точек».")
+            return
+        default = f"{self._current_image_path.stem}.dw.png"
+        out, _ = QFileDialog.getSaveFileName(self, "Экспорт в .dw.png", default,
+                                             "DrawWing PNG (*.dw.png *.png)")
+        if not out:
+            return
+        if export_dw_png(self._current_image_path, self._current_ann, Path(out)):
+            self.status.emit(f"Сохранено: {out}")
+        else:
+            QMessageBox.warning(
+                self, "Неполная разметка",
+                "Для .dw.png нужны все 19 точек Тофильского. "
+                "Расставьте оставшиеся точки и попробуйте снова.")
 
     # ---- panel collapse / per-landmark actions ------------------------------
 
