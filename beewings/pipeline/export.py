@@ -12,7 +12,7 @@ import datetime as _dt
 import json
 import shutil
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, Iterable, List, Optional, Set
 
 import openpyxl
 
@@ -31,6 +31,9 @@ _INDEX_METHODOLOGY = "alpatov"
 
 # IdentiFly/DrawWing .dw.png export is a 19-point format → only the Tofilski set.
 _DW_METHODOLOGY = "tofilski"
+
+# Selectable export artifacts (UI checkboxes map onto these keys).
+ALL_FORMATS: tuple = ("tps", "xlsx", "json", "dw")
 
 
 def _export_profiles() -> List[Profile]:
@@ -122,14 +125,20 @@ def _methodology_json(entry: ScanEntry, items: List[tuple], prof: Profile,
     }
 
 
-def export_per_scan(project: CropProject) -> Dict:
+def export_per_scan(project: CropProject,
+                    formats: Optional[Iterable[str]] = None) -> Dict:
     """Export one folder per scan into the scans folder. Returns summary stats.
 
     For each scan with annotations, writes ``<root>/<stem>/`` holding the scan
     image, a ``crops/`` folder, and — *per methodology that has annotations* —
-    suffixed artifacts ``<stem>_<methodology>.{tps,xlsx,json}``. Keeping the two
+    suffixed artifacts ``<stem>_<methodology>.{tps,xlsx,json}`` plus, for the
+    Tofilski methodology, IdentiFly ``dw/<wing>.dw.png`` files. Keeping the two
     methodologies in separate files makes Alpatov and Tofilski data unambiguous.
+
+    ``formats`` selects which artifacts to write (subset of ``ALL_FORMATS``);
+    ``None`` writes them all. The scan image and ``crops/`` are always copied.
     """
+    fmts: Set[str] = set(formats) if formats is not None else set(ALL_FORMATS)
     root = Path(project.root)
     profiles = _export_profiles()
     n_scans = 0
@@ -158,17 +167,20 @@ def export_per_scan(project: CropProject) -> Dict:
             with_idx = mid == _INDEX_METHODOLOGY
             n_points = len(prof.ids)
             n_wings += len(items)
-            export_tps([a for _, a in items], sdir / f"{stem}_{mid}.tps")
-            if mid == _DW_METHODOLOGY:
+            if "tps" in fmts:
+                export_tps([a for _, a in items], sdir / f"{stem}_{mid}.tps")
+            if "dw" in fmts and mid == _DW_METHODOLOGY:
                 # One IdentiFly/DrawWing .dw.png per fully-annotated wing.
                 dw_dir = sdir / "dw"
                 for cp, ann in items:
                     export_dw_png(cp, ann, dw_dir / f"{cp.stem}.dw.png")
-            rows = [_wing_row(cp.name, ann, n_points, with_idx) for cp, ann in items]
-            _write_xlsx(rows, n_points, sdir / f"{stem}_{mid}.xlsx")
-            (sdir / f"{stem}_{mid}.json").write_text(
-                json.dumps(_methodology_json(entry, items, prof, with_idx),
-                           ensure_ascii=False, indent=2),
-                encoding="utf-8")
+            if "xlsx" in fmts:
+                rows = [_wing_row(cp.name, ann, n_points, with_idx) for cp, ann in items]
+                _write_xlsx(rows, n_points, sdir / f"{stem}_{mid}.xlsx")
+            if "json" in fmts:
+                (sdir / f"{stem}_{mid}.json").write_text(
+                    json.dumps(_methodology_json(entry, items, prof, with_idx),
+                               ensure_ascii=False, indent=2),
+                    encoding="utf-8")
 
     return {"n_wings": n_wings, "n_scans": n_scans}

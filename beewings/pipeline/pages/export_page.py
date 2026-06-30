@@ -5,11 +5,19 @@ from pathlib import Path
 
 from PyQt6 import sip
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton,
+from PyQt6.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel, QPushButton,
                              QVBoxLayout, QWidget)
 
 from ..export import export_per_scan
 from ..project import CropProject
+
+# (format key, checkbox label) — keys must match export_per_scan's ALL_FORMATS.
+_FORMAT_CHOICES = [
+    ("tps", "TPS (.tps) — геометрическая морфометрия"),
+    ("xlsx", "Excel (.xlsx) — координаты + индексы"),
+    ("json", "JSON (.json) — данные + метаданные"),
+    ("dw", ".dw.png (DrawWing/IdentiFly) — только Тофильский"),
+]
 
 
 class ExportPage(QWidget):
@@ -39,11 +47,18 @@ class ExportPage(QWidget):
         cl.addWidget(self.info)
 
         contents = QLabel(
-            "На каждый скан создаётся папка рядом со сканами:\n"
-            "• сам скан  • crops/  • TPS  • Excel  • JSON (с метаданными)")
+            "На каждый скан создаётся папка рядом со сканами (сам скан + crops/).\n"
+            "Выберите, какие форматы выгружать:")
         contents.setWordWrap(True)
         contents.setStyleSheet("color: #99a; font-size: 12px;")
         cl.addWidget(contents)
+
+        self.format_boxes: dict = {}
+        for key, label in _FORMAT_CHOICES:
+            cb = QCheckBox(label)
+            cb.setChecked(True)
+            cl.addWidget(cb)
+            self.format_boxes[key] = cb
 
         self.dest = QLabel("")
         self.dest.setStyleSheet("color: #99a; font-size: 11px;")
@@ -84,7 +99,12 @@ class ExportPage(QWidget):
         if sip.isdeleted(self):
             return
         proj: CropProject = self.ctx["project"]
-        stats = export_per_scan(proj)
+        formats = [k for k, cb in self.format_boxes.items() if cb.isChecked()]
+        if not formats:
+            self._show_result(
+                "Выберите хотя бы один формат для экспорта.", ok=False)
+            return
+        stats = export_per_scan(proj, formats=formats)
         if stats["n_scans"] == 0:
             self._show_result(
                 "Нет размеченных крыльев — сначала расставьте точки.", ok=False)

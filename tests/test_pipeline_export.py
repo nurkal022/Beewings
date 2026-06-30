@@ -92,6 +92,22 @@ def test_export_writes_dw_png_for_tofilski(tmp_path):
     assert len(read_dw_png(dw_files[0])) == 19      # round-trips to 19 points
 
 
+def test_export_formats_selection(tmp_path):
+    from beewings.pipeline.export import export_per_scan
+    proj = _make_project_with_crops(
+        tmp_path, methodologies=("Алпатов 12 точек", "Тофильский 19 точек"))
+    export_per_scan(proj, formats=["json", "dw"])  # only JSON + .dw.png
+    sdir = Path(proj.root) / "8"
+    assert (sdir / "8_tofilski.json").exists()
+    assert (sdir / "dw").is_dir() and list((sdir / "dw").glob("*.dw.png"))
+    # unchecked formats are not written
+    assert not (sdir / "8_tofilski.tps").exists()
+    assert not (sdir / "8_alpatov.xlsx").exists()
+    # scan + crops always copied regardless of format selection
+    assert (sdir / "8.jpg").exists()
+    assert (sdir / "crops").is_dir()
+
+
 def test_export_no_dw_png_without_tofilski(tmp_path):
     from beewings.pipeline.export import export_per_scan
     proj = _make_project_with_crops(tmp_path)  # Alpatov only
