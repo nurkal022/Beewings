@@ -13,9 +13,14 @@ Container (reverse-engineered from real IdentiFly samples):
       Y-flip), each number formatted ``%3d`` and joined by single spaces, with a
       trailing ``;`` and no newline. For 19 points that is exactly 162 bytes.
 
-Coordinates are taken verbatim from the stored annotation, which is already in
-the saved image's pixel space (the same coordinates that render correctly when
-the image is reloaded in the annotator).
+Two transforms map our annotation onto IdentiFly's convention (both verified by
+matching 30 real samples to our detector — ~2.5 px residual, unanimous):
+
+  * Orientation: IdentiFly stores the wing horizontally mirrored vs our images
+    (wing tip points left). We mirror the image and the X coordinates so the
+    export looks identical to a native IdentiFly file. Controlled by ``mirror``.
+  * Landmark order: IdentiFly's point sequence differs from our Tofilski IDs.
+    ``IDENTIFLY_ORDER[k]`` is our landmark ID written at IdentiFly position k.
 """
 from __future__ import annotations
 
@@ -24,7 +29,7 @@ import zlib
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
-from PIL import Image
+from PIL import Image, ImageOps
 from PIL.PngImagePlugin import PngInfo
 
 from .schema import WingAnnotation
@@ -32,11 +37,12 @@ from .schema import WingAnnotation
 # IdentiFly's keyword for the embedded-landmarks text chunk.
 DW_KEYWORD = "IdentiFly"
 
-# Order in which landmark IDs are written into the chunk. IdentiFly expects the
-# 19 Tofilski landmarks in a fixed sequence; our Tofilski-19 profile uses IDs
-# 1..19 in that same sequence. Isolated here so a round-trip mismatch is a
-# one-line fix rather than a logic change.
-IDENTIFLY_ORDER: Sequence[int] = tuple(range(1, 20))
+# Order in which our landmark IDs are written into the chunk: IDENTIFLY_ORDER[k]
+# is the Tofilski ID that becomes IdentiFly landmark position k (0-based).
+# Derived by matching our detector's output to 30 real IdentiFly samples
+# (Hungarian assignment, 30/30 unanimous, ~2.5 px residual).
+IDENTIFLY_ORDER: Sequence[int] = (
+    2, 3, 6, 5, 4, 7, 8, 9, 10, 11, 12, 13, 14, 19, 18, 17, 16, 15, 1)
 
 
 def _landmark_chunk_text(coords: Sequence[Tuple[int, int]]) -> str:
@@ -64,18 +70,27 @@ def export_dw_png(
     ann: WingAnnotation,
     out_path: Path,
     order: Sequence[int] = IDENTIFLY_ORDER,
+    mirror: bool = True,
 ) -> bool:
     """Write an IdentiFly ``.dw.png`` for one annotated wing.
 
-    Embeds the wing image as 8-bit grayscale plus the landmark chunk. Requires
-    every id in ``order`` to be present (IdentiFly files are always full sets);
-    if any is missing or skipped, writes nothing and returns ``False``.
+    Embeds the wing image as 8-bit grayscale plus the landmark chunk, in
+    IdentiFly's order. With ``mirror`` (default), the image and X coordinates are
+    flipped horizontally so the file matches IdentiFly's canonical orientation
+    (wing tip pointing left). Requires every id in ``order`` to be present
+    (IdentiFly files are always full sets); otherwise writes nothing and returns
+    ``False``.
     """
     coords = _ordered_int_coords(ann, order)
     if coords is None:
         return False
 
     img = Image.open(image_path).convert("L")  # 8-bit grayscale, PNG colortype 0
+    if mirror:
+        w = img.width
+        img = ImageOps.mirror(img)
+        coords = [(w - x, y) for x, y in coords]
+
     meta = PngInfo()
     meta.add_text(DW_KEYWORD, _landmark_chunk_text(coords), zip=True)  # zTXt chunk
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,7 +116,13 @@ def read_dw_png(path: Path) -> List[Tuple[int, int]]:
             if keyword.decode("latin-1") == DW_KEYWORD:
                 # rest = <compression method byte><compressed datastream>
                 text = zlib.decompress(rest[1:]).decode("latin-1")
-                nums = [int(v) for v in text.split("landmarks:")[1].rstrip(";").split()]
+                if "landmarks:" not in text:
+                    return []
+                # The chunk may carry extra fields after the landmarks, e.g.
+                # "landmarks:..;threshold1:..;sequence:..". Take only up to the
+                # first ';', which closes the landmarks list.
+                seg = text.split("landmarks:", 1)[1].split(";", 1)[0]
+                nums = [int(v) for v in seg.split()]
                 return list(zip(nums[0::2], nums[1::2]))
         off += 12 + length
         if ctype == b"IEND":

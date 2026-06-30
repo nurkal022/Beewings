@@ -49,16 +49,30 @@ def test_format_matches_real_identifly_sample():
     assert all(isinstance(x, int) and isinstance(y, int) for x, y in coords)
 
 
-def test_export_round_trips(tmp_path: Path):
+def test_export_round_trips_order_no_mirror(tmp_path: Path):
     img = tmp_path / "w.png"
     _make_image(img)
     ann = _full_ann()
     out = tmp_path / "w.dw.png"
-    assert export_dw_png(img, ann, out) is True
+    assert export_dw_png(img, ann, out, mirror=False) is True
 
     coords = read_dw_png(out)
-    expected = [(int(round(lm.x)), int(round(lm.y)))
-                for lm in sorted(ann.landmarks, key=lambda l: IDENTIFLY_ORDER.index(l.id))]
+    by_id = {lm.id: (int(round(lm.x)), int(round(lm.y))) for lm in ann.landmarks}
+    expected = [by_id[i] for i in IDENTIFLY_ORDER]  # written in IdentiFly order
+    assert coords == expected
+
+
+def test_export_mirror_flips_x(tmp_path: Path):
+    w = 200
+    img = tmp_path / "w.png"
+    _make_image(img, w=w)
+    ann = _full_ann()
+    out = tmp_path / "w.dw.png"
+    export_dw_png(img, ann, out, mirror=True)
+
+    coords = read_dw_png(out)
+    by_id = {lm.id: (int(round(lm.x)), int(round(lm.y))) for lm in ann.landmarks}
+    expected = [(w - by_id[i][0], by_id[i][1]) for i in IDENTIFLY_ORDER]
     assert coords == expected
 
 
